@@ -288,8 +288,7 @@ input, select, textarea {
 }
 
 .tree-insert-control:hover,
-.tree-insert-control.open,
-.tree:focus-within > li > .tree-insert-control {
+.tree-insert-control:focus-within {
   opacity: 1;
 }
 
@@ -346,7 +345,7 @@ input, select, textarea {
 }
 
 .tree-insert-control:hover .tree-insert-button span,
-.tree-insert-control.open .tree-insert-button span {
+.tree-insert-control:focus-within .tree-insert-button span {
   opacity: 1;
   transform: translateY(0);
 }

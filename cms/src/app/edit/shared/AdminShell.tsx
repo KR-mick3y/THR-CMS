@@ -687,6 +687,33 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     }
   }
 
+  async function changeAdminPassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const newPassword = String(form.get('newPassword') || '')
+    const confirmPassword = String(form.get('confirmPassword') || '')
+    if (newPassword !== confirmPassword) {
+      showMessage('New password confirmation does not match.', 'error')
+      return
+    }
+    try {
+      const response = await fetch('/api/admin/password', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrf },
+        body: JSON.stringify({
+          currentPassword: String(form.get('currentPassword') || ''),
+          newPassword,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Password change failed.')
+      event.currentTarget.reset()
+      showMessage('Admin password changed.', 'success')
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : 'Password change failed.', 'error')
+    }
+  }
+
   async function saveSiteSettings(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     try {
@@ -1165,7 +1192,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
             </div>
           </form>
         ) : mode === 'me' ? (
-          <form className="profile-settings" onSubmit={saveGitHubSettings}>
+          <div className="profile-settings">
             <div className="profile-hero">
               <div>
                 <span className="profile-kicker">Publishing identity</span>
@@ -1179,7 +1206,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
               </div>
             </div>
 
-            <div className="profile-grid">
+            <form className="profile-grid" onSubmit={saveGitHubSettings}>
               <section className="profile-card">
                 <div className="profile-card-heading">
                   <strong>Git author</strong>
@@ -1208,12 +1235,27 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
                 <div className="profile-meta"><span>Stored at</span><code>{gitSettings.hasSshKey ? gitSettings.sshKeyPath : '.cms-private/github_deploy_key'}</code></div>
                 <div className="settings-note">The key directory is excluded by `.gitignore` as `.cms-private/`. Add the matching public key to GitHub as a write-enabled deploy key.</div>
               </section>
-            </div>
 
-            <div className="profile-actions">
-              <button type="submit"><Save size={16} /> Save GitHub settings</button>
-            </div>
-          </form>
+              <div className="profile-actions">
+                <button type="submit"><Save size={16} /> Save GitHub settings</button>
+              </div>
+            </form>
+
+            <form className="profile-grid" onSubmit={changeAdminPassword}>
+              <section className="profile-card profile-card-wide">
+                <div className="profile-card-heading">
+                  <strong>Admin account</strong>
+                  <span>Default login is admin / admin123. Changed passwords are stored under .cms-private/.</span>
+                </div>
+                <label>Current password<input name="currentPassword" type="password" autoComplete="current-password" required /></label>
+                <label>New password<input name="newPassword" type="password" autoComplete="new-password" minLength={8} required /></label>
+                <label>Confirm new password<input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required /></label>
+              </section>
+              <div className="profile-actions">
+                <button type="submit"><Save size={16} /> Change password</button>
+              </div>
+            </form>
+          </div>
         ) : (
           <div className="editor-grid">
             <section className="editor-main">
@@ -2380,6 +2422,11 @@ function Tree({
 }
 
 function TreeInsertControl({ open, onToggle, onCreatePage, onCreateCategory }: { open: boolean; onToggle: () => void; onCreatePage: () => void; onCreateCategory: () => void }) {
+  function run(action: () => void) {
+    onToggle()
+    action()
+  }
+
   return (
     <div className={`tree-insert-control ${open ? 'open' : ''}`}>
       <button type="button" className="tree-insert-button" onClick={(event) => { event.stopPropagation(); onToggle() }} aria-label="Insert">
@@ -2388,8 +2435,8 @@ function TreeInsertControl({ open, onToggle, onCreatePage, onCreateCategory }: {
       </button>
       {open ? (
         <div className="tree-insert-menu" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-          <button type="button" onClick={onCreatePage}><FilePlus2 size={15} /> Page</button>
-          <button type="button" onClick={onCreateCategory}><FolderPlus size={15} /> Group</button>
+          <button type="button" onClick={() => run(onCreatePage)}><FilePlus2 size={15} /> Page</button>
+          <button type="button" onClick={() => run(onCreateCategory)}><FolderPlus size={15} /> Group</button>
         </div>
       ) : null}
     </div>

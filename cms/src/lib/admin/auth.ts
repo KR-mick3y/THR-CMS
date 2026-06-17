@@ -1,4 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import { cookies } from 'next/headers'
 import bcrypt from 'bcryptjs'
 
@@ -11,7 +13,9 @@ export type AdminSession = {
 const COOKIE_NAME = 'cms_admin'
 const MAX_AGE_SECONDS = 60 * 60 * 8
 const DEVELOPMENT_ADMIN_USERNAME = 'admin'
-const DEVELOPMENT_ADMIN_PASSWORD_HASH = '$2a$10$lIaqsg52oC0yy20s82i.Je/tyYNfwCR7d4mh8sVb7FKXH46e2eWCS'
+const DEVELOPMENT_ADMIN_PASSWORD_HASH = '$2a$10$cfh7rOErthcDlvSu1vDt6Ock/WY2aSaEoFVzFNa90wkUZoXduTniK'
+const adminSettingsRoot = path.join(process.cwd(), '.cms-private')
+const adminAuthSettingsPath = path.join(adminSettingsRoot, 'admin-auth.json')
 type SessionCookieOptions = {
   httpOnly: boolean
   secure: boolean
@@ -21,10 +25,20 @@ type SessionCookieOptions = {
 }
 
 export async function verifyAdminPassword(username: string, password: string): Promise<boolean> {
-  const expectedUser = process.env.ADMIN_USERNAME || (process.env.NODE_ENV === 'production' ? '' : DEVELOPMENT_ADMIN_USERNAME)
-  const passwordHash = process.env.ADMIN_PASSWORD_HASH || (process.env.NODE_ENV === 'production' ? '' : DEVELOPMENT_ADMIN_PASSWORD_HASH)
+  const localSettings = await readAdminAuthSettings()
+  const expectedUser = localSettings.username || process.env.ADMIN_USERNAME || DEVELOPMENT_ADMIN_USERNAME
+  const passwordHash = localSettings.passwordHash || process.env.ADMIN_PASSWORD_HASH || DEVELOPMENT_ADMIN_PASSWORD_HASH
   if (!expectedUser || !passwordHash || username !== expectedUser) return false
   return bcrypt.compare(password, passwordHash)
+}
+
+export async function updateAdminPassword(input: { currentPassword: string; newPassword: string }): Promise<void> {
+  const username = (await readAdminAuthSettings()).username || process.env.ADMIN_USERNAME || DEVELOPMENT_ADMIN_USERNAME
+  if (!input.newPassword || input.newPassword.length < 8) throw new Error('New password must be at least 8 characters.')
+  const valid = await verifyAdminPassword(username, input.currentPassword)
+  if (!valid) throw new Error('Current password is incorrect.')
+  await fs.mkdir(adminSettingsRoot, { recursive: true })
+  await fs.writeFile(adminAuthSettingsPath, `${JSON.stringify({ username, passwordHash: await bcrypt.hash(input.newPassword, 10) }, null, 2)}\n`, { mode: 0o600 })
 }
 
 export async function createSessionCookie(user: string): Promise<{ name: string; value: string; options: SessionCookieOptions }> {
@@ -95,4 +109,16 @@ function hmac(value: string): string {
   const secret = process.env.ADMIN_SESSION_SECRET
   if (!secret && process.env.NODE_ENV === 'production') throw new Error('ADMIN_SESSION_SECRET is required in production.')
   return createHmac('sha256', secret || 'development-only-change-me').update(value).digest('base64url')
+}
+
+async function readAdminAuthSettings(): Promise<{ username: string; passwordHash: string }> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(adminAuthSettingsPath, 'utf8')) as { username?: unknown; passwordHash?: unknown }
+    return {
+      username: typeof parsed.username === 'string' ? parsed.username : '',
+      passwordHash: typeof parsed.passwordHash === 'string' ? parsed.passwordHash : '',
+    }
+  } catch {
+    return { username: '', passwordHash: '' }
+  }
 }
