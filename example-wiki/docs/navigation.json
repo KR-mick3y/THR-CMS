@@ -1,0 +1,28 @@
+[
+  {
+    "id": "page:index",
+    "type": "page",
+    "title": "Home",
+    "slug": "index",
+    "path": "index.md",
+    "url": "/",
+    "status": "published"
+  },
+  {
+    "id": "category:getting-started",
+    "type": "category",
+    "title": "Getting Started",
+    "slug": "getting-started",
+    "children": [
+      {
+        "id": "page:getting-started/welcome",
+        "type": "page",
+        "title": "Welcome",
+        "slug": "welcome",
+        "path": "getting-started/welcome.md",
+        "url": "/getting-started/welcome.md",
+        "status": "published"
+      }
+    ]
+  }
+]

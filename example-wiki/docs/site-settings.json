@@ -1,0 +1,26 @@
+{
+  "title": "Example Docs",
+  "description": "Example documentation site for the file-backed CMS.",
+  "logo": "/images/logo.svg",
+  "navLinks": [
+    {
+      "label": "Example Link",
+      "url": "https://example.com"
+    }
+  ],
+  "footerLinks": [
+    {
+      "label": "Terms",
+      "url": "/policies/terms"
+    },
+    {
+      "label": "Privacy",
+      "url": "/policies/privacy"
+    },
+    {
+      "label": "About",
+      "url": "/policies/about"
+    }
+  ],
+  "githubUrl": "https://github.com/example/example-docs"
+}

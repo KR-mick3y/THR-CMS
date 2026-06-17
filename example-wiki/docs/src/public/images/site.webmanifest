@@ -1,0 +1,8 @@
+{
+  "name": "Example Docs",
+  "short_name": "Docs",
+  "icons": [],
+  "theme_color": "#24292f",
+  "background_color": "#ffffff",
+  "display": "standalone"
+}
