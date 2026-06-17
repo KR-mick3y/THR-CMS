@@ -21,6 +21,7 @@ type CategoryNode = { id: string; type: 'category'; title: string; slug: string;
 type PageNode = { id: string; type: 'page'; title: string; slug: string; path: string; url: string; status: 'draft' | 'published' | 'archived'; icon?: CmsIcon }
 type SiteSettings = { title: string; description: string; logo: string; navLinks: Array<{ label: string; url: string }>; footerLinks: Array<{ label: string; url: string }>; githubUrl: string }
 type GitHistoryEntry = { hash: string; shortHash: string; author: string; date: string; message: string; url: string; summary: string; files: Array<{ status: string; path: string }> }
+type PageDraft = { page: PageNode; title: string; authors: string; status: PageNode['status']; icon?: CmsIcon; blocks: EditorBlock[] }
 type TransformTarget = 'paragraph' | 'heading1' | 'heading2' | 'heading3' | 'heading4' | 'heading5' | 'heading6' | 'inlineCode' | 'codeBlock' | 'quote' | 'list'
 type SlashMenuItem = { id: SlashCommand; title: string; description: string; icon: React.ReactNode }
 type PendingTreeOperation =
@@ -45,6 +46,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const blockEditorRef = useRef<HTMLDivElement | null>(null)
   const selectionDragRef = useRef<{ startPageX: number; startPageY: number } | null>(null)
   const editorFieldRefs = useRef(new Map<string, HTMLElement>())
+  const pageDraftsRef = useRef(new Map<string, PageDraft>())
   const pendingEditorFocusRef = useRef('')
   const pendingNewPageGroupRef = useRef('')
   const [csrf, setCsrf] = useState('')
@@ -192,6 +194,11 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }
 
   async function loadPage(id: string) {
+    const draft = pageDraftsRef.current.get(id)
+    if (draft) {
+      restorePageDraft(id, draft)
+      return
+    }
     const response = await fetch(`/api/admin/pages/${encodeURIComponent(id)}`)
     if (!response.ok) return
     const data = await response.json()
@@ -204,6 +211,42 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     setIcon(data.page.icon || data.frontmatter?.icon)
     setBlocks(adapterEnsureEditableTail(nextBlocks))
     setActiveBlockId(nextBlocks[0]?.id || '')
+  }
+
+  function saveCurrentPageDraft() {
+    if (!isEditMode || !page) return
+    pageDraftsRef.current.set(page.id, {
+      page,
+      title,
+      authors,
+      status,
+      icon,
+      blocks: cloneEditorBlocks(blocks),
+    })
+  }
+
+  function restorePageDraft(id: string, draft: PageDraft) {
+    const nextBlocks = adapterEnsureEditableTail(cloneEditorBlocks(draft.blocks))
+    setSelectedId(id)
+    setPage(draft.page)
+    setTitle(draft.title)
+    setAuthors(draft.authors)
+    setStatus(draft.status)
+    setIcon(draft.icon)
+    setBlocks(nextBlocks)
+    setActiveBlockId(nextBlocks[0]?.id || '')
+  }
+
+  function selectTreePage(id: string) {
+    if (isEditMode) {
+      saveCurrentPageDraft()
+      setTreeMenuId('')
+      setSelectedId(id)
+      window.history.pushState(null, '', `/edit/pages/${encodeURIComponent(id)}`)
+      void loadPage(id)
+      return
+    }
+    router.push(`/edit/pages/${encodeURIComponent(id)}`)
   }
 
   async function mutate(url: string, body: unknown, method = 'POST') {
@@ -227,6 +270,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     const markdown = adapterDocumentMarkdown(title, blocks)
     const data = await mutate(`/api/admin/pages/${encodeURIComponent(page.id)}`, { title, status, icon, markdown, frontmatter: { authors } }, 'PATCH')
     setPage(data.page)
+    pageDraftsRef.current.delete(page.id)
     showMessage('Saved locally.')
     await refreshNavigation()
   }
@@ -518,6 +562,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
         setPage(null)
       }
       await mutate('/api/admin/publish', { message: messageToUse })
+      pageDraftsRef.current.clear()
       await refreshNavigation()
       if (page && shouldSaveCurrentPage) {
         await loadPage(idMap.get(page.id) || page.id)
@@ -1004,7 +1049,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
           editable={isEditMode && !pageSearchActive}
           pendingDeletedPageIds={pendingDeletedPageIds}
           pendingDeletedCategoryIds={pendingDeletedCategoryIds}
-          onSelect={(id) => router.push(`/edit/pages/${encodeURIComponent(id)}`)}
+          onSelect={selectTreePage}
           onMenuToggle={(id) => setTreeMenuId((current) => current === id ? '' : id)}
           onDeletePage={deleteTreePage}
           onDeleteCategory={deleteTreeCategory}
@@ -3183,6 +3228,10 @@ function frontmatterAuthors(value: unknown): string {
   if (Array.isArray(value)) return value.join(', ')
   if (typeof value === 'string') return value
   return ''
+}
+
+function cloneEditorBlocks(blocks: EditorBlock[]): EditorBlock[] {
+  return JSON.parse(JSON.stringify(blocks)) as EditorBlock[]
 }
 
 function initialsForTitle(value: string): string {
