@@ -6,7 +6,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     await requireCsrf(request)
     const body = await request.json()
-    return json({ output: await publish(String(body.message || '')) })
+    return json(await publish(String(body.message || '')))
   } catch (error) {
     return routeError(error)
   }

@@ -561,7 +561,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       } else if (page && !shouldSaveCurrentPage) {
         setPage(null)
       }
-      await mutate('/api/admin/publish', { message: messageToUse })
+      const publishResult = await mutate('/api/admin/publish', { message: messageToUse })
       pageDraftsRef.current.clear()
       await refreshNavigation()
       if (page && shouldSaveCurrentPage) {
@@ -583,7 +583,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
           router.replace('/edit/pages')
         }
       }
-      showMessage('Merge and push succeeded.', 'success')
+      showMessage(publishResult.deployed ? 'Merge, push, and deploy succeeded.' : 'Merge and push succeeded.', 'success')
       setCommitMessage(messageToUse)
       setChangeLog([])
       setChangesOpen(false)

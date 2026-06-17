@@ -260,6 +260,11 @@ export type GitHistoryEntry = {
   summary: string
 }
 
+export type PublishResult = {
+  output: string
+  deployed: boolean
+}
+
 export async function gitHistory(limit = 20): Promise<GitHistoryEntry[]> {
   const count = Math.min(Math.max(Number.isFinite(limit) ? Math.floor(limit) : 20, 1), 50)
   const { stdout } = await runGit([
@@ -275,7 +280,7 @@ export async function gitHistory(limit = 20): Promise<GitHistoryEntry[]> {
   return parseGitHistory(stdout, repoName)
 }
 
-export async function publish(commitMessage: string): Promise<string> {
+export async function publish(commitMessage: string): Promise<PublishResult> {
   if (!commitMessage.trim()) throw new Error('Commit message is required.')
   await assertGitIdentity()
   await runGit(['add', ...CMS_MANAGED_PATHS])
@@ -283,8 +288,12 @@ export async function publish(commitMessage: string): Promise<string> {
   await runGit(['commit', '-m', commitMessage.trim()])
   const branch = await gitBranch()
   if (!branch) throw new Error('Current Git branch could not be determined.')
-  const { stdout, stderr } = await runGit(['push', '-u', 'origin', branch], { useSshKey: true })
-  return `${stdout}${stderr}`
+  const pushed = await runGit(['push', '-u', 'origin', branch], { useSshKey: true })
+  const deployed = await runDeployCommand()
+  return {
+    output: [pushed.stdout, pushed.stderr, deployed.output].filter(Boolean).join('\n'),
+    deployed: deployed.ran,
+  }
 }
 
 export async function getGitHubSettings(): Promise<GitHubSettings> {
@@ -566,6 +575,24 @@ async function gitSshEnvironment(): Promise<NodeJS.ProcessEnv> {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
+}
+
+async function runDeployCommand(): Promise<{ ran: boolean; output: string }> {
+  const command = process.env.CMS_DEPLOY_COMMAND?.trim()
+  if (!command) return { ran: false, output: '' }
+  try {
+    const { stdout, stderr } = await exec('/bin/sh', ['-lc', command], {
+      cwd: repoRoot,
+      env: process.env,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: Number(process.env.CMS_DEPLOY_TIMEOUT_MS || 600_000),
+    })
+    return { ran: true, output: [stdout, stderr].filter(Boolean).join('\n') }
+  } catch (error) {
+    const deployError = error as Error & { stdout?: string; stderr?: string }
+    const detail = [deployError.message, deployError.stderr, deployError.stdout].filter(Boolean).join('\n').trim()
+    throw new Error(`Deploy command failed after git push.\n${detail || command}`)
+  }
 }
 
 async function runGit(args: string[], options: { useSshKey?: boolean } = {}): Promise<{ stdout: string; stderr: string }> {
