@@ -49,6 +49,12 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const pageDraftsRef = useRef(new Map<string, PageDraft>())
   const selectedIdRef = useRef(pageId || '')
   const loadPageRequestRef = useRef(0)
+  const currentPageRef = useRef<PageNode | null>(null)
+  const currentTitleRef = useRef('')
+  const currentAuthorsRef = useRef('')
+  const currentStatusRef = useRef<PageNode['status']>('draft')
+  const currentIconRef = useRef<CmsIcon | undefined>(undefined)
+  const currentBlocksRef = useRef<EditorBlock[]>([adapterInitialParagraphBlock()])
   const pendingEditorFocusRef = useRef('')
   const pendingNewPageGroupRef = useRef('')
   const [csrf, setCsrf] = useState('')
@@ -110,6 +116,13 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const siteInitials = useMemo(() => initialsForTitle(siteName), [siteName])
   const isCreatingPage = mode === 'new-page' || (mode === 'pages' && !pages.length && !page)
   const queuedEditorPageId = page?.id.startsWith('pending-page-') ? page.id : ''
+
+  currentPageRef.current = page
+  currentTitleRef.current = title
+  currentAuthorsRef.current = authors
+  currentStatusRef.current = status
+  currentIconRef.current = icon
+  currentBlocksRef.current = blocks
 
   function showMessage(text: string, tone: 'info' | 'success' | 'error' = 'info') {
     setMessageTone(tone)
@@ -238,14 +251,15 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }
 
   function saveCurrentPageDraft() {
-    if (!isEditMode || !page) return
-    pageDraftsRef.current.set(page.id, {
-      page,
-      title,
-      authors,
-      status,
-      icon,
-      blocks: cloneEditorBlocks(blocks),
+    const currentPage = currentPageRef.current
+    if (!isEditMode || !currentPage) return
+    pageDraftsRef.current.set(currentPage.id, {
+      page: currentPage,
+      title: currentTitleRef.current,
+      authors: currentAuthorsRef.current,
+      status: currentStatusRef.current,
+      icon: currentIconRef.current,
+      blocks: cloneEditorBlocks(currentBlocksRef.current),
     })
   }
 
@@ -268,7 +282,10 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     setSelectedId(id)
     selectedIdRef.current = id
     window.history.pushState(null, '', `/edit/pages/${encodeURIComponent(id)}`)
-    void loadPage(id)
+    void (async () => {
+      if (isEditMode) await saveCurrentDraftToLocal()
+      await loadPage(id)
+    })()
   }
 
   async function mutate(url: string, body: unknown, method = 'POST') {
@@ -637,6 +654,24 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       if (data.page) savedPages.set(pageIdToSave, data.page)
     }
     return savedPages
+  }
+
+  async function saveCurrentDraftToLocal(): Promise<PageNode | null> {
+    const draft = currentPageRef.current ? pageDraftsRef.current.get(currentPageRef.current.id) : null
+    if (!draft || draft.page.id.startsWith('pending-page-') || pendingDeletedPageIds.has(draft.page.id)) return null
+    const markdown = adapterDocumentMarkdown(draft.title, draft.blocks)
+    const data = await mutate(`/api/admin/pages/${encodeURIComponent(draft.page.id)}`, {
+      title: draft.title,
+      status: draft.status,
+      icon: draft.icon,
+      markdown,
+      frontmatter: { authors: draft.authors },
+    }, 'PATCH')
+    if (data.page) {
+      pageDraftsRef.current.set(data.page.id, { ...draft, page: data.page })
+      return data.page
+    }
+    return null
   }
 
   async function applyPendingTreeOperations(): Promise<Map<string, string>> {
@@ -1321,6 +1356,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
               ) : (
                 <div className={`block-editor ${isEditMode ? '' : 'locked'}`} ref={blockEditorRef} tabIndex={-1}>
                   <TiptapMarkdownEditor
+                    key={`${page?.id || 'new'}:${editorDocumentVersion}`}
                     blocks={blocks}
                     documentKey={`${page?.id || 'new'}:${editorDocumentVersion}`}
                     pageId={page?.id || ''}
@@ -1328,6 +1364,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
                     onChange={(nextBlocks) => {
                       if (!isEditMode) return
                       const normalizedBlocks = adapterEnsureEditableTail(nextBlocks)
+                      currentBlocksRef.current = normalizedBlocks
                       setBlocks(normalizedBlocks)
                       if (page) {
                         pageDraftsRef.current.set(page.id, {
