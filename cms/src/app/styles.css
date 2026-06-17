@@ -392,6 +392,7 @@ input, select, textarea {
 
 .tree-row {
   align-items: center;
+  border: 1px solid transparent;
   border-radius: 6px;
   display: grid;
   gap: 4px;
@@ -400,11 +401,13 @@ input, select, textarea {
 }
 
 .tree-row:hover {
-  background: #f1f4f8;
+  background: #f6f8fa;
+  border-color: #e5e8ec;
 }
 
 .tree-row.selected {
-  background: #ecebe7;
+  background: #eef4ff;
+  border-color: #b9d4ff;
 }
 
 .tree-row.dragging {
@@ -466,7 +469,8 @@ input, select, textarea {
 }
 
 .tree-row.page-row > button.selected {
-  background: #ecebe7;
+  background: transparent;
+  color: #174ea6;
 }
 
 .tree-actions {
@@ -2690,7 +2694,9 @@ code {
 .profile-actions {
   align-items: center;
   display: flex;
+  grid-column: 1 / -1;
   justify-content: flex-end;
+  margin-top: -2px;
 }
 
 .profile-actions button {
