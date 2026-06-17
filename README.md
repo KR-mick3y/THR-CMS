@@ -25,7 +25,7 @@ Example login:
 
 ```text
 username: admin
-password: admin
+password: admin123
 ```
 
 ## Run Public Preview
