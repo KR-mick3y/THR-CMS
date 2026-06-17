@@ -49,6 +49,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const pageDraftsRef = useRef(new Map<string, PageDraft>())
   const selectedIdRef = useRef(pageId || '')
   const loadPageRequestRef = useRef(0)
+  const initialPageLoadRef = useRef('')
   const currentPageRef = useRef<PageNode | null>(null)
   const currentTitleRef = useRef('')
   const currentAuthorsRef = useRef('')
@@ -162,9 +163,14 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
 
   useEffect(() => {
     if (mode !== 'pages' && mode !== 'media') return
-    if (!activePageId) return
-    loadPage(activePageId)
-  }, [activePageId, mode])
+    const targetId = pageId || selectedIdRef.current || pages[0]?.id || ''
+    if (!targetId) return
+    if (currentPageRef.current?.id === targetId && selectedIdRef.current === targetId) return
+    const loadKey = `${mode}:${targetId}`
+    if (initialPageLoadRef.current === loadKey) return
+    initialPageLoadRef.current = loadKey
+    void loadPage(targetId)
+  }, [mode, pageId, pages.length])
 
   useEffect(() => {
     if (mode !== 'new-page') return
@@ -280,13 +286,15 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }
 
   function selectTreePage(id: string) {
-    if (isEditMode) saveCurrentPageDraft()
     setTreeMenuId('')
-    setSelectedId(id)
-    selectedIdRef.current = id
     window.history.pushState(null, '', `/edit/pages/${encodeURIComponent(id)}`)
     void (async () => {
-      if (isEditMode) await saveCurrentDraftToLocal()
+      if (isEditMode) {
+        saveCurrentPageDraft()
+        await saveCurrentDraftToLocal()
+      }
+      setSelectedId(id)
+      selectedIdRef.current = id
       await loadPage(id)
     })()
   }
@@ -1204,7 +1212,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
         ) : mode === 'media' ? (
           <form className="form-grid" onSubmit={uploadMedia}>
             <h1>Media</h1>
-            <label>Page<select value={activePageId} onChange={(event) => setSelectedId(event.target.value)}>{pages.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+            <label>Page<select value={activePageId} onChange={(event) => selectTreePage(event.target.value)}>{pages.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
             <label>File<input type="file" name="file" required /></label>
             <button type="submit"><Image size={16} /> Upload</button>
           </form>
