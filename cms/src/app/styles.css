@@ -392,8 +392,6 @@ input, select, textarea {
 
 .tree-row {
   align-items: center;
-  border: 1px solid transparent;
-  border-radius: 6px;
   display: grid;
   gap: 4px;
   grid-template-columns: minmax(0, 1fr) 26px;
@@ -401,13 +399,11 @@ input, select, textarea {
 }
 
 .tree-row:hover {
-  background: #f6f8fa;
-  border-color: #e5e8ec;
+  background: transparent;
 }
 
 .tree-row.selected {
-  background: #eef4ff;
-  border-color: #b9d4ff;
+  background: transparent;
 }
 
 .tree-row.dragging {
@@ -439,15 +435,22 @@ input, select, textarea {
 
 .tree-row.page-row > button {
   background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: #2f363d;
   display: flex;
   gap: 7px;
   justify-content: flex-start;
-  min-height: 30px;
+  min-height: 32px;
   overflow: hidden;
   padding: 0 6px;
   text-overflow: ellipsis;
   width: 100%;
+}
+
+.tree-row.page-row:hover > button {
+  background: #f6f8fa;
+  border-color: #e5e8ec;
 }
 
 .tree-row.page-row > button span {
@@ -469,7 +472,8 @@ input, select, textarea {
 }
 
 .tree-row.page-row > button.selected {
-  background: transparent;
+  background: #eef4ff;
+  border-color: #b9d4ff;
   color: #174ea6;
 }
 
