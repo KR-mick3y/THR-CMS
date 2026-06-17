@@ -172,6 +172,18 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }, [selectedId])
 
   useEffect(() => {
+    if (!isEditMode || !page) return
+    pageDraftsRef.current.set(page.id, {
+      page,
+      title,
+      authors,
+      status,
+      icon,
+      blocks: cloneEditorBlocks(blocks),
+    })
+  }, [isEditMode, page, title, authors, status, icon, blocks])
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (!isEditMode) return
       if (event.key !== 'Backspace' && event.key !== 'Delete') return
@@ -243,16 +255,12 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }
 
   function selectTreePage(id: string) {
-    if (isEditMode) {
-      saveCurrentPageDraft()
-      setTreeMenuId('')
-      setSelectedId(id)
-      selectedIdRef.current = id
-      window.history.pushState(null, '', `/edit/pages/${encodeURIComponent(id)}`)
-      void loadPage(id)
-      return
-    }
-    router.push(`/edit/pages/${encodeURIComponent(id)}`)
+    if (isEditMode) saveCurrentPageDraft()
+    setTreeMenuId('')
+    setSelectedId(id)
+    selectedIdRef.current = id
+    window.history.pushState(null, '', `/edit/pages/${encodeURIComponent(id)}`)
+    void loadPage(id)
   }
 
   async function mutate(url: string, body: unknown, method = 'POST') {
