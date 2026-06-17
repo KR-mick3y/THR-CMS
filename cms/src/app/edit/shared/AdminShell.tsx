@@ -55,6 +55,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const currentStatusRef = useRef<PageNode['status']>('draft')
   const currentIconRef = useRef<CmsIcon | undefined>(undefined)
   const currentBlocksRef = useRef<EditorBlock[]>([adapterInitialParagraphBlock()])
+  const editorSnapshotRef = useRef<(() => EditorBlock[]) | null>(null)
   const pendingEditorFocusRef = useRef('')
   const pendingNewPageGroupRef = useRef('')
   const [csrf, setCsrf] = useState('')
@@ -253,13 +254,15 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   function saveCurrentPageDraft() {
     const currentPage = currentPageRef.current
     if (!isEditMode || !currentPage) return
+    const snapshotBlocks = editorSnapshotRef.current ? adapterEnsureEditableTail(editorSnapshotRef.current()) : currentBlocksRef.current
+    currentBlocksRef.current = snapshotBlocks
     pageDraftsRef.current.set(currentPage.id, {
       page: currentPage,
       title: currentTitleRef.current,
       authors: currentAuthorsRef.current,
       status: currentStatusRef.current,
       icon: currentIconRef.current,
-      blocks: cloneEditorBlocks(currentBlocksRef.current),
+      blocks: cloneEditorBlocks(snapshotBlocks),
     })
   }
 
@@ -657,6 +660,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }
 
   async function saveCurrentDraftToLocal(): Promise<PageNode | null> {
+    saveCurrentPageDraft()
     const draft = currentPageRef.current ? pageDraftsRef.current.get(currentPageRef.current.id) : null
     if (!draft || draft.page.id.startsWith('pending-page-') || pendingDeletedPageIds.has(draft.page.id)) return null
     const markdown = adapterDocumentMarkdown(draft.title, draft.blocks)
@@ -1376,6 +1380,9 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
                           blocks: cloneEditorBlocks(normalizedBlocks),
                         })
                       }
+                    }}
+                    onSnapshotReady={(snapshot) => {
+                      editorSnapshotRef.current = snapshot
                     }}
                     uploadAsset={uploadEditorAsset}
                   />

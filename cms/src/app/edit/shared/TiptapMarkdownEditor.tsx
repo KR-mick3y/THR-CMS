@@ -24,13 +24,14 @@ type Props = {
   pageId: string
   editable?: boolean
   onChange: (blocks: EditorBlock[]) => void
+  onSnapshotReady?: (snapshot: (() => EditorBlock[]) | null) => void
   uploadAsset: (file: File) => Promise<UploadResult | null>
 }
 
 type SlashState = { query: string; left: number; top: number; maxHeight: number } | null
 type SlashMenuItem = { id: SlashCommand; slash: string; title: string; description: string; aliases: string[]; icon: React.ReactNode }
 
-export default function TiptapMarkdownEditor({ blocks, documentKey, pageId, editable = true, onChange, uploadAsset }: Props) {
+export default function TiptapMarkdownEditor({ blocks, documentKey, pageId, editable = true, onChange, onSnapshotReady, uploadAsset }: Props) {
   const [slash, setSlash] = useState<SlashState>(null)
   const [slashIndex, setSlashIndex] = useState(0)
   const lastDocumentKeyRef = useRef(documentKey)
@@ -152,9 +153,11 @@ export default function TiptapMarkdownEditor({ blocks, documentKey, pageId, edit
   useEffect(() => {
     if (!editor) return
     editorRef.current = editor
+    onSnapshotReady?.(() => tiptapDocumentToBlocks(editor.getJSON()))
     editor.setEditable(editable)
     if (!editable) setSlash(null)
-  }, [editable, editor])
+    return () => onSnapshotReady?.(null)
+  }, [editable, editor, onSnapshotReady])
 
   useEffect(() => {
     slashRef.current = slash
