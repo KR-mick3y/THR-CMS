@@ -47,6 +47,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const selectionDragRef = useRef<{ startPageX: number; startPageY: number } | null>(null)
   const editorFieldRefs = useRef(new Map<string, HTMLElement>())
   const pageDraftsRef = useRef(new Map<string, PageDraft>())
+  const selectedIdRef = useRef(pageId || '')
   const pendingEditorFocusRef = useRef('')
   const pendingNewPageGroupRef = useRef('')
   const [csrf, setCsrf] = useState('')
@@ -167,6 +168,10 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }, [mode])
 
   useEffect(() => {
+    selectedIdRef.current = selectedId
+  }, [selectedId])
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (!isEditMode) return
       if (event.key !== 'Backspace' && event.key !== 'Delete') return
@@ -242,6 +247,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       saveCurrentPageDraft()
       setTreeMenuId('')
       setSelectedId(id)
+      selectedIdRef.current = id
       window.history.pushState(null, '', `/edit/pages/${encodeURIComponent(id)}`)
       void loadPage(id)
       return
@@ -545,18 +551,18 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     const shouldSaveCurrentPage = Boolean(page && findNodeById(navigation, page.id)?.type === 'page' && !pendingTreeOperations.some((operation) => operation.type === 'deletePage' && operation.pageId === page.id))
     setIsPublishing(true)
     try {
+      saveCurrentPageDraft()
       const idMap = await applyPendingTreeOperations()
       appliedTreeOperations = queuedCount > 0
       if (appliedTreeOperations) {
         setPendingTreeOperations([])
         await refreshNavigation()
       }
-      if (page && shouldSaveCurrentPage) {
-        const pageIdToSave = idMap.get(page.id) || page.id
-        const markdown = adapterDocumentMarkdown(title, blocks)
-        const saved = await mutate(`/api/admin/pages/${encodeURIComponent(pageIdToSave)}`, { title, status: 'published', icon, markdown, frontmatter: { authors } }, 'PATCH')
-        setPage(saved.page)
-        setStatus('published')
+      const savedDrafts = await saveDraftPagesForPublish(idMap)
+      const savedCurrent = page ? savedDrafts.get(idMap.get(page.id) || page.id) : undefined
+      if (savedCurrent && shouldSaveCurrentPage) {
+        setPage(savedCurrent)
+        setStatus(savedCurrent.status)
         await refreshNavigation()
       } else if (page && !shouldSaveCurrentPage) {
         setPage(null)
@@ -564,24 +570,23 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       const publishResult = await mutate('/api/admin/publish', { message: messageToUse })
       pageDraftsRef.current.clear()
       await refreshNavigation()
-      if (page && shouldSaveCurrentPage) {
-        await loadPage(idMap.get(page.id) || page.id)
-      } else if (page && !shouldSaveCurrentPage) {
-        const nextPages = flattenPages(await fetchNavigationSnapshot())
-        const nextPage = nextPages[0]
-        if (nextPage) {
-          setSelectedId(nextPage.id)
-          router.replace(`/edit/pages/${encodeURIComponent(nextPage.id)}`)
-          await loadPage(nextPage.id)
-        } else {
-          setPage(null)
-          setSelectedId('')
-          setBlocks([adapterInitialParagraphBlock()])
-          setTitle('')
-          setAuthors('')
-          setStatus('draft')
-          router.replace('/edit/pages')
-        }
+      const nextPages = flattenPages(await fetchNavigationSnapshot())
+      const preferredPageId = idMap.get(selectedIdRef.current) || selectedIdRef.current
+      const nextPage = nextPages.find((candidate) => candidate.id === preferredPageId) || nextPages[0]
+      if (nextPage) {
+        setSelectedId(nextPage.id)
+        selectedIdRef.current = nextPage.id
+        router.replace(`/edit/pages/${encodeURIComponent(nextPage.id)}`)
+        await loadPage(nextPage.id)
+      } else {
+        setPage(null)
+        setSelectedId('')
+        selectedIdRef.current = ''
+        setBlocks([adapterInitialParagraphBlock()])
+        setTitle('')
+        setAuthors('')
+        setStatus('draft')
+        router.replace('/edit/pages')
       }
       showMessage(publishResult.deployed ? 'Merge, push, and deploy succeeded.' : 'Merge and push succeeded.', 'success')
       setCommitMessage(messageToUse)
@@ -596,6 +601,26 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     } finally {
       setIsPublishing(false)
     }
+  }
+
+  async function saveDraftPagesForPublish(idMap: Map<string, string>): Promise<Map<string, PageNode>> {
+    const deletedPageIds = new Set(pendingTreeOperations.filter((operation) => operation.type === 'deletePage').map((operation) => operation.pageId))
+    const savedPages = new Map<string, PageNode>()
+    const drafts = Array.from(pageDraftsRef.current.values())
+    for (const draft of drafts) {
+      if (deletedPageIds.has(draft.page.id) || draft.page.id.startsWith('pending-page-')) continue
+      const pageIdToSave = idMap.get(draft.page.id) || draft.page.id
+      const markdown = adapterDocumentMarkdown(draft.title, draft.blocks)
+      const data = await mutate(`/api/admin/pages/${encodeURIComponent(pageIdToSave)}`, {
+        title: draft.title,
+        status: 'published',
+        icon: draft.icon,
+        markdown,
+        frontmatter: { authors: draft.authors },
+      }, 'PATCH')
+      if (data.page) savedPages.set(pageIdToSave, data.page)
+    }
+    return savedPages
   }
 
   async function applyPendingTreeOperations(): Promise<Map<string, string>> {
