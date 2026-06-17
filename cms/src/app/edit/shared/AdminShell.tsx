@@ -48,6 +48,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const editorFieldRefs = useRef(new Map<string, HTMLElement>())
   const pageDraftsRef = useRef(new Map<string, PageDraft>())
   const selectedIdRef = useRef(pageId || '')
+  const loadPageRequestRef = useRef(0)
   const pendingEditorFocusRef = useRef('')
   const pendingNewPageGroupRef = useRef('')
   const [csrf, setCsrf] = useState('')
@@ -55,6 +56,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const [selectedId, setSelectedId] = useState(pageId || '')
   const [page, setPage] = useState<PageNode | null>(null)
   const [blocks, setBlocks] = useState<EditorBlock[]>([adapterInitialParagraphBlock()])
+  const [editorDocumentVersion, setEditorDocumentVersion] = useState(0)
   const [activeBlockId, setActiveBlockId] = useState('')
   const [imageTargetBlockId, setImageTargetBlockId] = useState('')
   const [slashBlockId, setSlashBlockId] = useState('')
@@ -211,14 +213,18 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }
 
   async function loadPage(id: string) {
+    const requestId = ++loadPageRequestRef.current
     const draft = pageDraftsRef.current.get(id)
     if (draft) {
+      if (requestId !== loadPageRequestRef.current) return
       restorePageDraft(id, draft)
       return
     }
     const response = await fetch(`/api/admin/pages/${encodeURIComponent(id)}`)
+    if (requestId !== loadPageRequestRef.current) return
     if (!response.ok) return
     const data = await response.json()
+    if (requestId !== loadPageRequestRef.current) return
     const nextBlocks = adapterMarkdownToBlocks(adapterStripDocumentTitle(data.markdown, data.page.title))
     setSelectedId(id)
     setPage(data.page)
@@ -227,6 +233,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     setStatus(data.page.status)
     setIcon(data.page.icon || data.frontmatter?.icon)
     setBlocks(adapterEnsureEditableTail(nextBlocks))
+    setEditorDocumentVersion((current) => current + 1)
     setActiveBlockId(nextBlocks[0]?.id || '')
   }
 
@@ -251,6 +258,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     setStatus(draft.status)
     setIcon(draft.icon)
     setBlocks(nextBlocks)
+    setEditorDocumentVersion((current) => current + 1)
     setActiveBlockId(nextBlocks[0]?.id || '')
   }
 
@@ -1314,11 +1322,23 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
                 <div className={`block-editor ${isEditMode ? '' : 'locked'}`} ref={blockEditorRef} tabIndex={-1}>
                   <TiptapMarkdownEditor
                     blocks={blocks}
-                    documentKey={page?.id || 'new'}
+                    documentKey={`${page?.id || 'new'}:${editorDocumentVersion}`}
                     pageId={page?.id || ''}
                     editable={isEditMode}
                     onChange={(nextBlocks) => {
-                      if (isEditMode) setBlocks(adapterEnsureEditableTail(nextBlocks))
+                      if (!isEditMode) return
+                      const normalizedBlocks = adapterEnsureEditableTail(nextBlocks)
+                      setBlocks(normalizedBlocks)
+                      if (page) {
+                        pageDraftsRef.current.set(page.id, {
+                          page,
+                          title,
+                          authors,
+                          status,
+                          icon,
+                          blocks: cloneEditorBlocks(normalizedBlocks),
+                        })
+                      }
                     }}
                     uploadAsset={uploadEditorAsset}
                   />
