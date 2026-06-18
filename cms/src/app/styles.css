@@ -1995,6 +1995,15 @@ textarea {
   width: 100px;
 }
 
+.visual-tabs-label {
+  color: #24292f;
+  display: inline-flex;
+  min-height: 28px;
+  min-width: 72px;
+  align-items: center;
+  padding: 0 4px;
+}
+
 .visual-tabs-nav span {
   color: #6a6f75;
   cursor: pointer;
