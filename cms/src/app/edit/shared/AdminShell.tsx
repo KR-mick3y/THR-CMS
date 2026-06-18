@@ -286,16 +286,25 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   }
 
   function selectTreePage(id: string) {
+    if (!id || id === selectedIdRef.current) return
+    let draftToPersist: PageDraft | null = null
+    if (isEditMode) {
+      saveCurrentPageDraft()
+      const previousPageId = currentPageRef.current?.id
+      draftToPersist = previousPageId ? pageDraftsRef.current.get(previousPageId) || null : null
+    }
     setTreeMenuId('')
+    setSelectedId(id)
+    selectedIdRef.current = id
     window.history.pushState(null, '', `/edit/pages/${encodeURIComponent(id)}`)
+    void loadPage(id)
+    if (!draftToPersist) return
     void (async () => {
-      if (isEditMode) {
-        saveCurrentPageDraft()
-        await saveCurrentDraftToLocal()
+      try {
+        await saveDraftToLocal(draftToPersist)
+      } catch (error) {
+        showMessage(error instanceof Error ? error.message : 'Previous page could not be saved locally.', 'error')
       }
-      setSelectedId(id)
-      selectedIdRef.current = id
-      await loadPage(id)
     })()
   }
 
@@ -670,7 +679,12 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   async function saveCurrentDraftToLocal(): Promise<PageNode | null> {
     saveCurrentPageDraft()
     const draft = currentPageRef.current ? pageDraftsRef.current.get(currentPageRef.current.id) : null
-    if (!draft || draft.page.id.startsWith('pending-page-') || pendingDeletedPageIds.has(draft.page.id)) return null
+    if (!draft) return null
+    return saveDraftToLocal(draft)
+  }
+
+  async function saveDraftToLocal(draft: PageDraft): Promise<PageNode | null> {
+    if (draft.page.id.startsWith('pending-page-') || pendingDeletedPageIds.has(draft.page.id)) return null
     const markdown = adapterDocumentMarkdown(draft.title, draft.blocks)
     const data = await mutate(`/api/admin/pages/${encodeURIComponent(draft.page.id)}`, {
       title: draft.title,
