@@ -23,7 +23,6 @@ export function IconPicker({ value, disabled, compact = false, onChange }: Props
     const normalized = query.trim().toLowerCase()
     return FONT_AWESOME_FREE_ICONS
       .filter((icon) => !normalized || [icon.name, icon.label, icon.style, ...icon.aliases].join(' ').toLowerCase().includes(normalized))
-      .slice(0, 80)
   }, [query])
 
   useLayoutEffect(() => {
@@ -58,8 +57,9 @@ export function IconPicker({ value, disabled, compact = false, onChange }: Props
         <div className="icon-picker-popover" style={{ left: popoverPosition.left, top: popoverPosition.top, width: popoverPosition.width }} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
           <div className="icon-picker-search">
             <Search size={15} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Font Awesome icons" autoFocus />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${FONT_AWESOME_FREE_ICONS.length} Font Awesome Free icons`} autoFocus />
           </div>
+          <div className="icon-picker-count">{results.length} icons</div>
           <div className="icon-picker-grid">
             {results.map((icon) => (
               <button

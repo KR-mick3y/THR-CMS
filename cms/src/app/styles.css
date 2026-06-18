@@ -1295,6 +1295,12 @@ textarea {
   padding: 0;
 }
 
+.icon-picker-count {
+  color: #6a6f75;
+  font-size: 12px;
+  padding: 0 2px 2px;
+}
+
 .icon-picker-grid {
   display: grid;
   gap: 6px;
