@@ -1390,6 +1390,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
                     onChange={(nextBlocks) => {
                       if (!isEditMode) return
                       const normalizedBlocks = adapterEnsureEditableTail(nextBlocks)
+                      if (sameEditorBlocks(currentBlocksRef.current, normalizedBlocks)) return
                       currentBlocksRef.current = normalizedBlocks
                       setBlocks(normalizedBlocks)
                       if (page) {
@@ -3398,6 +3399,10 @@ function frontmatterAuthors(value: unknown): string {
 
 function cloneEditorBlocks(blocks: EditorBlock[]): EditorBlock[] {
   return JSON.parse(JSON.stringify(blocks)) as EditorBlock[]
+}
+
+function sameEditorBlocks(left: EditorBlock[], right: EditorBlock[]): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function initialsForTitle(value: string): string {

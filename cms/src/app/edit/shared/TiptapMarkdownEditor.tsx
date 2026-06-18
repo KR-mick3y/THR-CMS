@@ -36,10 +36,14 @@ export default function TiptapMarkdownEditor({ blocks, documentKey, pageId, edit
   const [slashIndex, setSlashIndex] = useState(0)
   const lastDocumentKeyRef = useRef(documentKey)
   const uploadAssetRef = useRef(uploadAsset)
+  const onChangeRef = useRef(onChange)
+  const onSnapshotReadyRef = useRef(onSnapshotReady)
   const slashRef = useRef<SlashState>(null)
   const slashIndexRef = useRef(0)
   const editorRef = useRef<NonNullable<ReturnType<typeof useEditor>> | null>(null)
   uploadAssetRef.current = uploadAsset
+  onChangeRef.current = onChange
+  onSnapshotReadyRef.current = onSnapshotReady
   const uploadViaRef = useCallback((file: File) => uploadAssetRef.current(file), [])
 
   const extensions = useMemo(() => [
@@ -145,7 +149,7 @@ export default function TiptapMarkdownEditor({ blocks, documentKey, pageId, edit
       },
     },
     onUpdate({ editor: currentEditor }) {
-      onChange(tiptapDocumentToBlocks(currentEditor.getJSON()))
+      onChangeRef.current(tiptapDocumentToBlocks(currentEditor.getJSON()))
     },
     immediatelyRender: false,
   })
@@ -153,11 +157,11 @@ export default function TiptapMarkdownEditor({ blocks, documentKey, pageId, edit
   useEffect(() => {
     if (!editor) return
     editorRef.current = editor
-    onSnapshotReady?.(() => tiptapDocumentToBlocks(editor.getJSON()))
+    onSnapshotReadyRef.current?.(() => tiptapDocumentToBlocks(editor.getJSON()))
     editor.setEditable(editable)
     if (!editable) setSlash(null)
-    return () => onSnapshotReady?.(null)
-  }, [editable, editor, onSnapshotReady])
+    return () => onSnapshotReadyRef.current?.(null)
+  }, [editable, editor])
 
   useEffect(() => {
     slashRef.current = slash
