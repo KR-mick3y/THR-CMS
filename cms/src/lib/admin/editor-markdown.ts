@@ -77,6 +77,13 @@ export function markdownToBlocks(markdown: string): EditorBlock[] {
       continue
     }
 
+    const htmlCode = parseHtmlCodeBlock(lines, index)
+    if (htmlCode) {
+      blocks.push({ id: blockId(), type: 'code', language: htmlCode.language, code: htmlCode.code, caption: htmlCode.caption, wrap: true })
+      index = htmlCode.nextIndex
+      continue
+    }
+
     const heading = line.match(/^(#{1,6})\s+(.*)$/)
     if (heading) {
       blocks.push({ id: blockId(), type: 'heading', level: heading[1].length as 1 | 2 | 3 | 4 | 5 | 6, content: heading[2] })
@@ -368,6 +375,44 @@ function tabMarkerMatch(line: string): { title: string } | null {
   const legacyMarker = line.match(/^@tab\s+(.*)$/)
   if (legacyMarker) return { title: legacyMarker[1].trim() }
   return null
+}
+
+function parseHtmlCodeBlock(lines: string[], startIndex: number): { language: string; code: string; caption: string; nextIndex: number } | null {
+  const firstLine = lines[startIndex] ?? ''
+  if (!/<pre\b/i.test(firstLine) || !/<code\b/i.test(firstLine)) return null
+
+  const htmlLines: string[] = []
+  let index = startIndex
+  while (index < lines.length) {
+    htmlLines.push(lines[index] ?? '')
+    if (/<\/code>\s*<\/pre>/i.test(lines[index] ?? '')) break
+    index += 1
+  }
+  if (index >= lines.length) return null
+
+  const htmlBlock = htmlLines.join('\n')
+  const attrs = `${htmlBlock.match(/<pre\b([^>]*)>/i)?.[1] || ''} ${htmlBlock.match(/<code\b([^>]*)>/i)?.[1] || ''}`
+  const language = normalizeCodeLanguage(attrs.match(/(?:language|lang)-([A-Za-z0-9_+#.-]+)/i)?.[1] || 'plaintext')
+  const caption = unescapeHtml(attrs.match(/data-title="([^"]*)"/i)?.[1] || '')
+  const codeHtml = htmlBlock.match(/<code\b[^>]*>([\s\S]*?)<\/code>/i)?.[1] || ''
+  const code = unescapeHtml(
+    codeHtml
+      .replace(/<\/?strong>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/?(span|em)[^>]*>/gi, '')
+      .replace(/<[^>]+>/g, ''),
+  ).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n+$/g, '')
+
+  return { language, code, caption, nextIndex: index + 1 }
+}
+
+function normalizeCodeLanguage(language: string): string {
+  const normalized = language.trim().toLowerCase()
+  if (!normalized) return 'plaintext'
+  if (normalized === 'sh' || normalized === 'shell') return 'bash'
+  if (normalized === 'ps1') return 'powershell'
+  if (normalized === 'text' || normalized === 'plain') return 'plaintext'
+  return normalized
 }
 
 function tableLine(row: string[]): string {

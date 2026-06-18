@@ -739,7 +739,13 @@ function TabsNodeView({ node, updateAttributes, editor, deleteNode, pageId, uplo
       {!locked ? <BlockDeleteMenu open={menuOpen} setOpen={setMenuOpen} onDelete={deleteNode} /> : null}
       <div className="visual-tabs-nav">{tabs.map((tab, index) => (
         <button key={index} type="button" className={index === safeIndex ? 'active' : ''} onClick={() => setActiveIndex(index)}>
-          <input value={tab.title} disabled={locked} onChange={(event) => setTabs(tabs.map((item, currentIndex) => currentIndex === index ? { ...item, title: event.target.value } : item))} />
+          <input
+            value={tab.title}
+            disabled={locked}
+            onClick={(event) => { event.stopPropagation(); setActiveIndex(index) }}
+            onFocus={() => setActiveIndex(index)}
+            onChange={(event) => setTabs(tabs.map((item, currentIndex) => currentIndex === index ? { ...item, title: event.target.value } : item))}
+          />
           {!locked && tabs.length > 1 ? <span onClick={(event) => { event.stopPropagation(); setTabs(tabs.filter((_, currentIndex) => currentIndex !== index)); setActiveIndex(Math.max(0, index - 1)) }}>×</span> : null}
         </button>
       ))}
