@@ -2219,26 +2219,15 @@ textarea {
 
 .visual-code-caption {
   background: #ffffff;
-  border: 1px solid #d8dee4;
-  border-left: 0;
-  border-top: 0;
-  border-bottom-right-radius: 6px;
+  border-bottom: 1px solid #e5e8ec;
   color: #57606a;
   font-size: 12px;
   font-weight: 400;
-  left: 0;
   max-width: 70%;
   overflow: hidden;
-  padding: 5px 9px;
-  position: absolute;
+  padding: 6px 12px;
   text-overflow: ellipsis;
-  top: 33px;
   white-space: nowrap;
-  z-index: 2;
-}
-
-.visual-code:has(.visual-code-caption) .visual-code-editor {
-  padding-top: 40px;
 }
 
 .visual-code-editor {
