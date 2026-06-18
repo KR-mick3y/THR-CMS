@@ -21,7 +21,7 @@ type CategoryNode = { id: string; type: 'category'; title: string; slug: string;
 type PageNode = { id: string; type: 'page'; title: string; slug: string; path: string; url: string; status: 'draft' | 'published' | 'archived'; icon?: CmsIcon; children?: Node[] }
 type SiteSettings = { title: string; description: string; logo: string; navLinks: Array<{ label: string; url: string }>; footerLinks: Array<{ label: string; url: string }>; githubUrl: string }
 type GitHistoryEntry = { hash: string; shortHash: string; author: string; date: string; message: string; url: string; summary: string; files: Array<{ status: string; path: string }> }
-type PageDraft = { page: PageNode; title: string; authors: string; status: PageNode['status']; icon?: CmsIcon; blocks: EditorBlock[] }
+type PageDraft = { page: PageNode; title: string; authors: string; status: PageNode['status']; icon?: CmsIcon; blocks: EditorBlock[]; parentId?: string }
 type TransformTarget = 'paragraph' | 'heading1' | 'heading2' | 'heading3' | 'heading4' | 'heading5' | 'heading6' | 'inlineCode' | 'codeBlock' | 'quote' | 'list'
 type SlashMenuItem = { id: SlashCommand; title: string; description: string; icon: React.ReactNode }
 type PendingTreeOperation =
@@ -204,6 +204,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       status,
       icon,
       blocks: cloneEditorBlocks(blocks),
+      parentId: pageDraftsRef.current.get(page.id)?.parentId,
     })
   }, [isEditMode, page, title, authors, status, icon, blocks])
 
@@ -271,6 +272,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       status: currentStatusRef.current,
       icon: currentIconRef.current,
       blocks: cloneEditorBlocks(snapshotBlocks),
+      parentId: pageDraftsRef.current.get(currentPage.id)?.parentId,
     })
   }
 
@@ -447,6 +449,26 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       showMessage('Page title is required.', 'error')
       return null
     }
+    if (page?.id.startsWith('pending-page-')) {
+      const parentId = pageCategoryId || pageDraftsRef.current.get(page.id)?.parentId
+      const nextPage = { ...page, title: nextTitle, slug: pageSlug.trim() || page.slug, status, icon, children: page.children || [] }
+      const nextBlocks = editorSnapshotRef.current ? adapterEnsureEditableTail(editorSnapshotRef.current()) : blocks
+      pageDraftsRef.current.set(page.id, {
+        page: nextPage,
+        title: nextTitle,
+        authors,
+        status,
+        icon,
+        blocks: cloneEditorBlocks(nextBlocks),
+        parentId,
+      })
+      setPage(nextPage)
+      setTitle(nextTitle)
+      setBlocks(nextBlocks)
+      setNavigation((current) => updateNodeInTree(current, page.id, (node) => ({ ...node, title: nextTitle, slug: nextPage.slug, icon })))
+      showMessage('Page draft queued. Merge will create it after its parent page or group exists.', 'success')
+      return nextPage
+    }
     const slug = pageSlug.trim()
     const categoryId = pageCategoryId || undefined
     const body = adapterDocumentMarkdown(nextTitle, blocks)
@@ -511,6 +533,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       status: 'draft',
       icon: undefined,
       blocks: cloneEditorBlocks([initial]),
+      parentId,
     })
     setTreeInsertMenuId('')
     setTreeMenuId('')
@@ -705,6 +728,33 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     const deletedPageIds = new Set(pendingTreeOperations.filter((operation) => operation.type === 'deletePage').map((operation) => operation.pageId))
     const savedPages = new Map<string, PageNode>()
     const drafts = Array.from(pageDraftsRef.current.values())
+    const pendingDrafts = new Map(drafts.filter((draft) => draft.page.id.startsWith('pending-page-')).map((draft) => [draft.page.id, draft]))
+    const createPendingDraft = async (draft: PageDraft): Promise<PageNode | null> => {
+      if (deletedPageIds.has(draft.page.id)) return null
+      if (idMap.has(draft.page.id)) return savedPages.get(idMap.get(draft.page.id) || '') || null
+      const parentDraft = draft.parentId?.startsWith('pending-page-') ? pendingDrafts.get(draft.parentId) : undefined
+      if (parentDraft) await createPendingDraft(parentDraft)
+      const categoryId = draft.parentId ? idMap.get(draft.parentId) || draft.parentId : undefined
+      const data = await mutate('/api/admin/pages', {
+        title: draft.title,
+        slug: draft.page.slug || '',
+        categoryId,
+        status: 'published',
+        authors: draft.authors,
+        body: adapterDocumentMarkdown(draft.title, draft.blocks),
+        icon: draft.icon,
+      })
+      if (data.page) {
+        idMap.set(draft.page.id, data.page.id)
+        savedPages.set(data.page.id, data.page)
+        pageDraftsRef.current.set(data.page.id, { ...draft, page: data.page, status: data.page.status, parentId: categoryId })
+        return data.page
+      }
+      return null
+    }
+    for (const draft of pendingDrafts.values()) {
+      await createPendingDraft(draft)
+    }
     for (const draft of drafts) {
       if (deletedPageIds.has(draft.page.id) || draft.page.id.startsWith('pending-page-')) continue
       const pageIdToSave = idMap.get(draft.page.id) || draft.page.id
@@ -747,9 +797,33 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
 
   async function applyPendingTreeOperations(): Promise<Map<string, string>> {
     const idMap = new Map<string, string>()
+    const ensurePendingPageCreated = async (tempPageId?: string): Promise<string | undefined> => {
+      if (!tempPageId) return undefined
+      if (!tempPageId.startsWith('pending-page-')) return idMap.get(tempPageId) || tempPageId
+      const mapped = idMap.get(tempPageId)
+      if (mapped) return mapped
+      const draft = pageDraftsRef.current.get(tempPageId)
+      if (!draft) return tempPageId
+      const parentId = draft.parentId ? await ensurePendingPageCreated(draft.parentId) : undefined
+      const data = await mutate('/api/admin/pages', {
+        title: draft.title,
+        slug: draft.page.slug || '',
+        categoryId: parentId ? idMap.get(parentId) || parentId : undefined,
+        status: draft.status,
+        authors: draft.authors,
+        body: adapterDocumentMarkdown(draft.title, draft.blocks),
+        icon: draft.icon,
+      })
+      if (data.page?.id) {
+        idMap.set(tempPageId, data.page.id)
+        pageDraftsRef.current.set(data.page.id, { ...draft, page: data.page, status: data.page.status, parentId })
+        return data.page.id
+      }
+      return tempPageId
+    }
     for (const operation of pendingTreeOperations) {
       if (operation.type === 'createCategory') {
-        const parentId = operation.parentId ? idMap.get(operation.parentId) || operation.parentId : undefined
+        const parentId = operation.parentId ? await ensurePendingPageCreated(operation.parentId) : undefined
         const data = await mutate('/api/admin/categories', {
           title: operation.title,
           slug: operation.slug || '',
@@ -758,7 +832,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
         })
         if (data.category?.id) idMap.set(operation.tempId, data.category.id)
       } else if (operation.type === 'createPage') {
-        const categoryId = operation.categoryId ? idMap.get(operation.categoryId) || operation.categoryId : undefined
+        const categoryId = operation.categoryId ? await ensurePendingPageCreated(operation.categoryId) : undefined
         const data = await mutate('/api/admin/pages', {
           title: operation.title,
           slug: operation.slug || '',
@@ -788,7 +862,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       } else if (operation.type === 'movePage') {
         const pageIdToMove = idMap.get(operation.pageId) || operation.pageId
         const body = {
-          categoryId: operation.categoryId ? idMap.get(operation.categoryId) || operation.categoryId : undefined,
+          categoryId: operation.categoryId ? await ensurePendingPageCreated(operation.categoryId) : undefined,
           beforeId: operation.beforeId ? idMap.get(operation.beforeId) || operation.beforeId : undefined,
           afterId: operation.afterId ? idMap.get(operation.afterId) || operation.afterId : undefined,
         }
@@ -797,7 +871,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       } else {
         const categoryIdToMove = idMap.get(operation.categoryId) || operation.categoryId
         const body = {
-          parentId: operation.parentId ? idMap.get(operation.parentId) || operation.parentId : undefined,
+          parentId: operation.parentId ? await ensurePendingPageCreated(operation.parentId) : undefined,
           beforeId: operation.beforeId ? idMap.get(operation.beforeId) || operation.beforeId : undefined,
           afterId: operation.afterId ? idMap.get(operation.afterId) || operation.afterId : undefined,
         }
@@ -1449,6 +1523,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
                       currentBlocksRef.current = normalizedBlocks
                       setBlocks(normalizedBlocks)
                       if (page) {
+                        const previousDraft = pageDraftsRef.current.get(page.id)
                         pageDraftsRef.current.set(page.id, {
                           page,
                           title,
@@ -1456,6 +1531,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
                           status,
                           icon,
                           blocks: cloneEditorBlocks(normalizedBlocks),
+                          parentId: previousDraft?.parentId,
                         })
                       }
                     }}
