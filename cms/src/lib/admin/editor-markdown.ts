@@ -79,7 +79,7 @@ export function markdownToBlocks(markdown: string): EditorBlock[] {
 
     const htmlCode = parseHtmlCodeBlock(lines, index)
     if (htmlCode) {
-      blocks.push({ id: blockId(), type: 'code', language: htmlCode.language, code: htmlCode.code, caption: htmlCode.caption, wrap: true })
+      blocks.push({ id: blockId(), type: 'code', language: htmlCode.language, code: htmlCode.code, caption: htmlCode.caption, wrap: false })
       index = htmlCode.nextIndex
       continue
     }

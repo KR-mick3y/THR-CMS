@@ -1070,7 +1070,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       const text = textForBlock(block)
       if (target === 'paragraph') return newParagraphBlock(text)
       if (target === 'inlineCode') return { id, type: 'inlineCode', content: text } satisfies EditorBlock
-      if (target === 'codeBlock') return { id, type: 'code', code: text, language: 'plaintext', caption: '', wrap: true } satisfies EditorBlock
+      if (target === 'codeBlock') return { id, type: 'code', code: text, language: 'plaintext', caption: '', wrap: false } satisfies EditorBlock
       if (target === 'quote') return { id, type: 'quote', content: text } satisfies EditorBlock
       if (target === 'list') {
         const items = text.split('\n').filter(Boolean).map((line) => ({ text: line, level: 0 }))
@@ -1770,7 +1770,7 @@ function EditorBlockView(props: {
             event.stopPropagation()
             const codeFence = event.currentTarget.innerText.trim().match(/^```(\S*)$/)
             if (codeFence) {
-              props.onUpdate(() => ({ id: block.id, type: 'code', code: '', language: codeFence[1] || 'plaintext', caption: '', wrap: true }))
+              props.onUpdate(() => ({ id: block.id, type: 'code', code: '', language: codeFence[1] || 'plaintext', caption: '', wrap: false }))
               props.onSlashClose()
               props.onRefocus()
               return
@@ -2818,7 +2818,7 @@ function blockForCommand(command: SlashCommand): EditorBlock {
   if (command === 'toc') return { id: blockId(), type: 'toc' }
   if (command === 'tabs') return { id: blockId(), type: 'tabs', tabs: [{ title: 'Tab 1', content: '' }, { title: 'Tab 2', content: '' }] }
   if (command === 'embed') return { id: blockId(), type: 'embed', url: '', caption: '' }
-  if (command === 'code') return { id: blockId(), type: 'code', code: '', language: 'bash', caption: '', wrap: true }
+  if (command === 'code') return { id: blockId(), type: 'code', code: '', language: 'bash', caption: '', wrap: false }
   return newParagraphBlock()
 }
 
@@ -2862,7 +2862,7 @@ function blockFromMarkdownSpaceShortcut(value: string, id: string): EditorBlock 
   if (shortcut === '>') return { id, type: 'quote', content: '' }
 
   const codeFence = shortcut.match(/^```(\S*)$/)
-  if (codeFence) return { id, type: 'code', language: codeFence[1] || 'plaintext', code: '', caption: '', wrap: true }
+  if (codeFence) return { id, type: 'code', language: codeFence[1] || 'plaintext', code: '', caption: '', wrap: false }
 
   return null
 }
@@ -2901,7 +2901,7 @@ function blockFromMarkdownShortcut(value: string, id: string, options: { live?: 
   if (/^\s*(---|\*\*\*|___)\s*$/.test(value)) return { id, type: 'hr' }
 
   const completedFence = value.match(/^```(\S*)\n([\s\S]*)\n```$/)
-  if (completedFence) return { id, type: 'code', language: completedFence[1] || 'plaintext', code: completedFence[2], caption: '', wrap: true }
+  if (completedFence) return { id, type: 'code', language: completedFence[1] || 'plaintext', code: completedFence[2], caption: '', wrap: false }
 
   if (!options.live) {
     const inlineCode = value.match(/^`([^`\n]+)`$/) || value.match(/^```([^`\n]+)```$/)
@@ -3087,7 +3087,7 @@ function markdownToBlocks(markdown: string): EditorBlock[] {
 
     const htmlCode = parseHtmlCodeBlock(lines, index)
     if (htmlCode) {
-      blocks.push({ id: blockId(), type: 'code', language: htmlCode.language, code: htmlCode.code, caption: htmlCode.caption, wrap: true })
+      blocks.push({ id: blockId(), type: 'code', language: htmlCode.language, code: htmlCode.code, caption: htmlCode.caption, wrap: false })
       index = htmlCode.nextIndex
       continue
     }

@@ -212,7 +212,7 @@ function blockToTiptapNode(block: EditorBlock): JSONContent {
   if (block.type === 'heading') return { type: 'heading', attrs: { level: block.level }, content: inlineTextToContent(block.content) }
   if (block.type === 'quote') return { type: 'blockquote', content: block.content.split('\n').map((line) => ({ type: 'paragraph', content: inlineTextToContent(line) })) }
   if (block.type === 'hr') return { type: 'horizontalRule' }
-  if (block.type === 'code') return { type: 'codeBlock', attrs: { language: block.language || 'plaintext', caption: block.caption || '', wrap: block.wrap !== false }, content: block.code ? [{ type: 'text', text: block.code }] : undefined }
+  if (block.type === 'code') return { type: 'codeBlock', attrs: { language: block.language || 'plaintext', caption: block.caption || '', wrap: block.wrap === true }, content: block.code ? [{ type: 'text', text: block.code }] : undefined }
   if (block.type === 'list') {
     return {
       type: block.ordered ? 'orderedList' : 'bulletList',
@@ -255,7 +255,7 @@ function nodeToBlocks(node: JSONContent): EditorBlock[] {
   if (node.type === 'heading') return [{ id: blockId(), type: 'heading', level: normalizeHeadingLevel(node.attrs?.level), content: contentToInlineText(node.content || []) }]
   if (node.type === 'blockquote') return [{ id: blockId(), type: 'quote', content: (node.content || []).map((child) => contentToInlineText(child.content || [])).join('\n') }]
   if (node.type === 'horizontalRule') return [{ id: blockId(), type: 'hr' }]
-  if (node.type === 'codeBlock') return [{ id: blockId(), type: 'code', code: contentToPlainText(node.content || []), language: String(node.attrs?.language || 'plaintext'), caption: String(node.attrs?.caption || ''), wrap: node.attrs?.wrap !== false }]
+  if (node.type === 'codeBlock') return [{ id: blockId(), type: 'code', code: contentToPlainText(node.content || []), language: String(node.attrs?.language || 'plaintext'), caption: String(node.attrs?.caption || ''), wrap: node.attrs?.wrap === true }]
   if (node.type === 'bulletList' || node.type === 'orderedList') {
     return [{
       id: blockId(),
@@ -581,7 +581,7 @@ const ThrCodeBlock = CodeBlock.extend({
         },
       },
       caption: { default: '' },
-      wrap: { default: true },
+      wrap: { default: false },
     }
   },
   addNodeView() {
