@@ -162,6 +162,26 @@ export async function movePage(id: string, input: { categoryId?: string; beforeI
   return page
 }
 
+export async function moveCategory(id: string, input: { parentId?: string; beforeId?: string; afterId?: string }): Promise<NavigationCategory> {
+  const nodes = await loadNavigation()
+  const oldDirectory = categoryDirectoryPath(nodes, id)
+  const category = removeNode(nodes, id)
+  if (!category || category.type !== 'category') throw new Error('Category not found.')
+  const target = moveTarget(nodes, {
+    categoryId: input.parentId,
+    beforeId: input.beforeId,
+    afterId: input.afterId,
+  })
+  const used = new Set(target.children.map((node) => node.slug))
+  if (used.has(category.slug)) category.slug = collisionSafeSlug(category.slug, used)
+  target.children.splice(target.index, 0, category)
+  await rewriteCategoryDescendants(nodes)
+  if (oldDirectory) await fs.rm(oldDirectory, { force: true, recursive: true })
+  await saveNavigation(nodes)
+  const moved = findCategory(nodes, category.id) || category
+  return moved
+}
+
 export async function createCategory(input: { title: string; slug?: string; parentId?: string; icon?: CmsIcon | null }): Promise<NavigationCategory> {
   const nodes = await loadNavigation()
   const target = input.parentId ? childContainerFor(nodes, input.parentId) : { children: nodes, slugs: [] }

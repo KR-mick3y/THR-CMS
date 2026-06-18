@@ -274,7 +274,7 @@ input, select, textarea {
 }
 
 .tree > li {
-  margin: 3px 0;
+  margin: 1px 0;
 }
 
 .tree-insert-control {
@@ -289,6 +289,19 @@ input, select, textarea {
 
 .tree-insert-control:hover,
 .tree-insert-control:focus-within {
+  opacity: 1;
+}
+
+.category-drop-wrap > .tree-insert-control {
+  height: 0;
+  margin: 0 0 0 -12px;
+  overflow: visible;
+  z-index: 20;
+}
+
+.category-drop-wrap:hover > .tree-insert-control,
+.category-drop-wrap > .tree-insert-control.open,
+.category-drop-wrap > .tree-insert-control:focus-within {
   opacity: 1;
 }
 

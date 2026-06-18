@@ -1,6 +1,6 @@
 import { requireCsrf } from '@/lib/admin/auth'
 import { json, routeError } from '@/lib/admin/http'
-import { deleteCategory, deleteCategoryOnly, deleteCategoryTree, updateCategory } from '@/lib/admin/repository'
+import { deleteCategory, deleteCategoryOnly, deleteCategoryTree, moveCategory, updateCategory } from '@/lib/admin/repository'
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -8,6 +8,15 @@ export async function PATCH(request: Request, context: Context): Promise<Respons
   try {
     await requireCsrf(request)
     return json({ category: await updateCategory(decodeURIComponent((await context.params).id), await request.json()) })
+  } catch (error) {
+    return routeError(error)
+  }
+}
+
+export async function POST(request: Request, context: Context): Promise<Response> {
+  try {
+    await requireCsrf(request)
+    return json({ category: await moveCategory(decodeURIComponent((await context.params).id), await request.json()) })
   } catch (error) {
     return routeError(error)
   }
