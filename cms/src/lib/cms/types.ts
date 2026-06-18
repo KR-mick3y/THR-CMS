@@ -14,6 +14,7 @@ export type NavigationPage = {
   url: string
   status: PageStatus
   icon?: CmsIcon
+  children?: NavigationNode[]
 }
 
 export type NavigationCategory = {

@@ -28,6 +28,10 @@ function assertNode(value: unknown): void {
     requireString(node.url, 'page.url')
     if (!VALID_STATUSES.has(node.status as PageStatus)) throw new Error(`Invalid page status for ${node.id}.`)
     if (node.icon !== undefined) requireIcon(node.icon, 'page.icon')
+    if (node.children !== undefined) {
+      if (!Array.isArray(node.children)) throw new Error(`Page ${node.id} children must be an array.`)
+      node.children.forEach((child) => assertNode(child))
+    }
     return
   }
   throw new Error('Navigation node type must be category or page.')
@@ -52,8 +56,11 @@ export function navigationToSidebar(nodes: NavigationNode[]): SidebarItem[] {
 
 function nodeToSidebar(node: NavigationNode): SidebarItem | null {
   if (node.type === 'page') {
-    if (node.status !== 'published') return null
-    return { text: node.title, link: node.url }
+    const children = (node.children || [])
+      .map((child) => nodeToSidebar(child))
+      .filter((item): item is SidebarItem => Boolean(item))
+    if (node.status !== 'published') return children.length ? { text: node.title, collapsed: true, items: children } : null
+    return { text: node.title, link: node.url, ...(children.length ? { collapsed: true, items: children } : {}) }
   }
 
   const children = node.children
@@ -71,8 +78,8 @@ function nodeToSidebar(node: NavigationNode): SidebarItem | null {
 export function findPage(nodes: NavigationNode[], id: string): NavigationPage | null {
   for (const node of nodes) {
     if (node.type === 'page' && node.id === id) return node
-    if (node.type === 'category') {
-      const found = findPage(node.children, id)
+    if (node.type === 'category' || node.children?.length) {
+      const found = findPage(node.type === 'category' ? node.children : node.children || [], id)
       if (found) return found
     }
   }
@@ -86,6 +93,10 @@ export function findCategory(nodes: NavigationNode[], id: string): NavigationCat
       const found = findCategory(node.children, id)
       if (found) return found
     }
+    if (node.type === 'page' && node.children?.length) {
+      const found = findCategory(node.children, id)
+      if (found) return found
+    }
   }
   return null
 }
@@ -94,8 +105,8 @@ export function removeNode(nodes: NavigationNode[], id: string): NavigationNode 
   const index = nodes.findIndex((node) => node.id === id)
   if (index >= 0) return nodes.splice(index, 1)[0] ?? null
   for (const node of nodes) {
-    if (node.type === 'category') {
-      const removed = removeNode(node.children, id)
+    if (node.type === 'category' || node.children?.length) {
+      const removed = removeNode(node.type === 'category' ? node.children : node.children || [], id)
       if (removed) return removed
     }
   }
@@ -104,7 +115,11 @@ export function removeNode(nodes: NavigationNode[], id: string): NavigationNode 
 
 export function walkPages(nodes: NavigationNode[], visit: (page: NavigationPage, parents: NavigationCategory[]) => void, parents: NavigationCategory[] = []): void {
   for (const node of nodes) {
-    if (node.type === 'page') visit(node, parents)
-    else walkPages(node.children, visit, [...parents, node])
+    if (node.type === 'page') {
+      visit(node, parents)
+      if (node.children?.length) walkPages(node.children, visit, parents)
+    } else {
+      walkPages(node.children, visit, [...parents, node])
+    }
   }
 }

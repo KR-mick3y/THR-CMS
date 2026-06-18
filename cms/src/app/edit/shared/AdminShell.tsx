@@ -18,7 +18,7 @@ const TiptapMarkdownEditor = dynamic(() => import('./TiptapMarkdownEditor'), {
 type Mode = 'pages' | 'new-page' | 'categories' | 'media' | 'settings' | 'me'
 type Node = CategoryNode | PageNode
 type CategoryNode = { id: string; type: 'category'; title: string; slug: string; icon?: CmsIcon; children: Node[] }
-type PageNode = { id: string; type: 'page'; title: string; slug: string; path: string; url: string; status: 'draft' | 'published' | 'archived'; icon?: CmsIcon }
+type PageNode = { id: string; type: 'page'; title: string; slug: string; path: string; url: string; status: 'draft' | 'published' | 'archived'; icon?: CmsIcon; children?: Node[] }
 type SiteSettings = { title: string; description: string; logo: string; navLinks: Array<{ label: string; url: string }>; footerLinks: Array<{ label: string; url: string }>; githubUrl: string }
 type GitHistoryEntry = { hash: string; shortHash: string; author: string; date: string; message: string; url: string; summary: string; files: Array<{ status: string; path: string }> }
 type PageDraft = { page: PageNode; title: string; authors: string; status: PageNode['status']; icon?: CmsIcon; blocks: EditorBlock[] }
@@ -495,7 +495,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     draftToPersist = previousPageId ? pageDraftsRef.current.get(previousPageId) || null : null
     const tempId = pendingNodeId('page')
     const title = 'Untitled'
-    const newPage: PageNode = { id: tempId, type: 'page', title, slug: '', path: '', url: '', status: 'draft' }
+    const newPage: PageNode = { id: tempId, type: 'page', title, slug: '', path: '', url: '', status: 'draft', children: [] }
     const initial = adapterInitialParagraphBlock()
     setNavigation((current) => insertPageIntoTree(current, newPage, parentId ? { type: 'category', id: parentId } : { type: 'root' }) || current)
     pageDraftsRef.current.set(tempId, {
@@ -2435,63 +2435,96 @@ function Tree({
       {nodes.map((node) => (
         <li key={node.id}>
           {node.type === 'page' ? (
-            <div
-              className={`tree-row page-row ${node.id === selectedId ? 'selected' : ''} ${pendingDeletedPageIds.has(node.id) ? 'pending-delete' : ''} ${editable && draggingPageId === node.id ? 'dragging' : ''} ${editable && dropTarget?.type === 'before' && dropTarget.id === node.id ? 'drop-before' : ''} ${editable && dropTarget?.type === 'after' && dropTarget.id === node.id ? 'drop-after' : ''}`}
-              draggable={editable && !pendingDeletedPageIds.has(node.id)}
-              onDragStart={(event) => {
-                if (!editable || pendingDeletedPageIds.has(node.id)) return
-                event.dataTransfer.effectAllowed = 'move'
-                event.dataTransfer.setData('text/plain', node.id)
-                onDragPageStart(node.id)
-              }}
-              onDragOver={(event) => {
-                if (!editable || pendingDeletedPageIds.has(node.id)) return
-                event.preventDefault()
-                event.stopPropagation()
-                event.dataTransfer.dropEffect = 'move'
-                onDropTargetChange(pageDropTargetFromPointer(event, node.id))
-              }}
-              onDragLeave={(event) => {
-                if (event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) return
-                if (dropTarget?.type !== 'root' && dropTarget?.id === node.id) onDropTargetChange(null)
-              }}
-              onDrop={(event) => {
-                if (!editable) return
-                const pageIdToMove = event.dataTransfer.getData('text/plain') || draggingPageId
-                if (!pageIdToMove || pageIdToMove === node.id) return
-                event.preventDefault()
-                event.stopPropagation()
-                onDrop(pageIdToMove, pageDropTargetFromPointer(event, node.id))
-              }}
-              onDragEnd={onDragPageEnd}
-            >
-              <button
-                className={node.id === selectedId ? 'selected' : ''}
+            <div className="category-drop-wrap">
+              <div
+                className={`tree-row page-row ${node.id === selectedId ? 'selected' : ''} ${pendingDeletedPageIds.has(node.id) ? 'pending-delete' : ''} ${editable && draggingPageId === node.id ? 'dragging' : ''} ${editable && dropTarget?.type === 'before' && dropTarget.id === node.id ? 'drop-before' : ''} ${editable && dropTarget?.type === 'after' && dropTarget.id === node.id ? 'drop-after' : ''}`}
                 draggable={editable && !pendingDeletedPageIds.has(node.id)}
-                onClick={() => onSelect(node.id)}
                 onDragStart={(event) => {
                   if (!editable || pendingDeletedPageIds.has(node.id)) return
                   event.dataTransfer.effectAllowed = 'move'
                   event.dataTransfer.setData('text/plain', node.id)
                   onDragPageStart(node.id)
                 }}
+                onDragOver={(event) => {
+                  if (!editable || pendingDeletedPageIds.has(node.id)) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  event.dataTransfer.dropEffect = 'move'
+                  onDropTargetChange(pageDropTargetFromPointer(event, node.id))
+                }}
+                onDragLeave={(event) => {
+                  if (event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) return
+                  if (dropTarget?.type !== 'root' && dropTarget?.id === node.id) onDropTargetChange(null)
+                }}
+                onDrop={(event) => {
+                  if (!editable) return
+                  const pageIdToMove = event.dataTransfer.getData('text/plain') || draggingPageId
+                  if (!pageIdToMove || pageIdToMove === node.id) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onDrop(pageIdToMove, pageDropTargetFromPointer(event, node.id))
+                }}
                 onDragEnd={onDragPageEnd}
               >
-                <CmsIconView icon={node.icon} fallback={false} />
-                <span>{node.title}</span>
-                {pendingDeletedPageIds.has(node.id) ? <small className="tree-pending-label">Delete queued</small> : null}
-              </button>
+                <button
+                  className={node.id === selectedId ? 'selected' : ''}
+                  draggable={editable && !pendingDeletedPageIds.has(node.id)}
+                  onClick={() => onSelect(node.id)}
+                  onDragStart={(event) => {
+                    if (!editable || pendingDeletedPageIds.has(node.id)) return
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('text/plain', node.id)
+                    onDragPageStart(node.id)
+                  }}
+                  onDragEnd={onDragPageEnd}
+                >
+                  <CmsIconView icon={node.icon} fallback={false} />
+                  <span>{node.title}</span>
+                  {pendingDeletedPageIds.has(node.id) ? <small className="tree-pending-label">Delete queued</small> : null}
+                </button>
+                {editable ? (
+                  <div className="tree-actions">
+                    <button type="button" className="tree-action-button" onClick={(event) => { event.stopPropagation(); onMenuToggle(node.id) }} title="Page options"><MoreHorizontal size={14} /></button>
+                    {menuId === node.id ? (
+                      <div className="tree-menu" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+                        <TreeMetaForm node={node} onSave={(input) => onUpdateMeta(node, input)} />
+                        <button type="button" className="danger-text" onClick={() => onDeletePage(node)}>{pendingDeletedPageIds.has(node.id) ? 'Delete queued' : 'Delete page'}</button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : <div />}
+              </div>
+              <Tree
+                nodes={node.children || []}
+                selectedId={selectedId}
+                menuId={menuId}
+                draggingPageId={draggingPageId}
+                dropTarget={dropTarget}
+                editable={editable}
+                pendingDeletedPageIds={pendingDeletedPageIds}
+                pendingDeletedCategoryIds={pendingDeletedCategoryIds}
+                onSelect={onSelect}
+                onMenuToggle={onMenuToggle}
+                onDeletePage={onDeletePage}
+                onDeleteCategory={onDeleteCategory}
+                onUpdateMeta={onUpdateMeta}
+                insertMenuId={insertMenuId}
+                onInsertMenuToggle={onInsertMenuToggle}
+                onCreatePage={onCreatePage}
+                onCreateCategory={onCreateCategory}
+                onDragPageStart={onDragPageStart}
+                onDragPageEnd={onDragPageEnd}
+                onDropTargetChange={onDropTargetChange}
+                onDrop={onDrop}
+              />
               {editable ? (
-                <div className="tree-actions">
-                  <button type="button" className="tree-action-button" onClick={(event) => { event.stopPropagation(); onMenuToggle(node.id) }} title="Page options"><MoreHorizontal size={14} /></button>
-                  {menuId === node.id ? (
-                    <div className="tree-menu" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-                      <TreeMetaForm node={node} onSave={(input) => onUpdateMeta(node, input)} />
-                      <button type="button" className="danger-text" onClick={() => onDeletePage(node)}>{pendingDeletedPageIds.has(node.id) ? 'Delete queued' : 'Delete page'}</button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : <div />}
+                <TreeInsertControl
+                  open={insertMenuId === `insert-${node.id}`}
+                  onToggle={() => onInsertMenuToggle(`insert-${node.id}`)}
+                  onCreatePage={() => onCreatePage(node.id)}
+                  onCreateCategory={() => onCreateCategory(node.id)}
+                />
+              ) : null}
             </div>
           ) : (
             <div className="category-drop-wrap">
@@ -3260,13 +3293,13 @@ function unescapeHtml(value: string): string {
 }
 
 function flattenPages(nodes: Node[]): PageNode[] {
-  return nodes.flatMap((node) => node.type === 'page' ? [node] : flattenPages(node.children))
+  return nodes.flatMap((node) => node.type === 'page' ? [node, ...flattenPages(node.children || [])] : flattenPages(node.children))
 }
 
 function flattenCategories(nodes: Node[], prefix = ''): Array<{ id: string; label: string }> {
   return nodes.flatMap((node) => {
-    if (node.type === 'page') return []
     const label = prefix ? `${prefix} / ${node.title}` : node.title
+    if (node.type === 'page') return flattenCategories(node.children || [], label)
     return [{ id: node.id, label }, ...flattenCategories(node.children, label)]
   })
 }
@@ -3277,6 +3310,8 @@ function filterNavigation(nodes: Node[], query: string, parents: string[] = []):
 
   return nodes.flatMap<Node>((node) => {
     if (node.type === 'page') {
+      const nextParents = [...parents, node.title, node.slug]
+      const filteredChildren = filterNavigation(node.children || [], normalized, nextParents)
       const haystack = [
         node.title,
         node.slug,
@@ -3285,7 +3320,9 @@ function filterNavigation(nodes: Node[], query: string, parents: string[] = []):
         node.status,
         ...parents,
       ].join(' ').toLowerCase()
-      return haystack.includes(normalized) ? [{ ...node }] : []
+      if (haystack.includes(normalized)) return [{ ...node, children: cloneNavigation(node.children || []) }]
+      if (filteredChildren.length) return [{ ...node, children: filteredChildren }]
+      return []
     }
 
     const nextParents = [...parents, node.title, node.slug]
@@ -3298,7 +3335,7 @@ function filterNavigation(nodes: Node[], query: string, parents: string[] = []):
 }
 
 function cloneNavigation(nodes: Node[]): Node[] {
-  return nodes.map((node) => node.type === 'category' ? { ...node, children: cloneNavigation(node.children) } : { ...node })
+  return nodes.map((node) => node.type === 'category' ? { ...node, children: cloneNavigation(node.children) } : { ...node, children: cloneNavigation(node.children || []) })
 }
 
 function removeNodeFromTree(nodes: Node[], id: string): { nodes: Node[]; removed: Node | null } {
@@ -3308,10 +3345,11 @@ function removeNodeFromTree(nodes: Node[], id: string): { nodes: Node[]; removed
       removed = node
       return []
     }
-    if (node.type === 'category') {
-      const result = removeNodeFromTree(node.children, id)
+    const children = node.type === 'category' ? node.children : node.children || []
+    if (children.length) {
+      const result = removeNodeFromTree(children, id)
       if (result.removed) removed = result.removed
-      return [{ ...node, children: result.nodes }]
+      return [{ ...node, children: result.nodes } as Node]
     }
     return [node]
   })
@@ -3322,6 +3360,7 @@ function updateNodeInTree(nodes: Node[], id: string, updater: (node: Node) => No
   return nodes.map((node) => {
     if (node.id === id) return updater(node)
     if (node.type === 'category') return { ...node, children: updateNodeInTree(node.children, id, updater) }
+    if (node.children?.length) return { ...node, children: updateNodeInTree(node.children, id, updater) }
     return node
   })
 }
@@ -3330,6 +3369,7 @@ function liftCategoryFromTree(nodes: Node[], id: string): Node[] {
   return nodes.flatMap<Node>((node): Node[] => {
     if (node.type === 'category' && node.id === id) return cloneNavigation(node.children)
     if (node.type === 'category') return [{ ...node, children: liftCategoryFromTree(node.children, id) }]
+    if (node.children?.length) return [{ ...node, children: liftCategoryFromTree(node.children, id) }]
     return [node]
   })
 }
@@ -3337,8 +3377,9 @@ function liftCategoryFromTree(nodes: Node[], id: string): Node[] {
 function findNodeById(nodes: Node[], id: string): Node | null {
   for (const node of nodes) {
     if (node.id === id) return node
-    if (node.type === 'category') {
-      const found = findNodeById(node.children, id)
+    const children = node.type === 'category' ? node.children : node.children || []
+    if (children.length) {
+      const found = findNodeById(children, id)
       if (found) return found
     }
   }
@@ -3358,15 +3399,16 @@ function insertPageIntoTree(nodes: Node[], page: PageNode, target: Exclude<DropT
   if (target.type === 'category') {
     let matched = false
     const nextNodes = nodes.map((node) => {
-      if (node.type !== 'category') return node
       if (node.id === target.id) {
         matched = true
-        return { ...node, children: [...node.children, page] }
+        return { ...node, children: [...childrenForNode(node), page] } as Node
       }
-      const nextChildren = insertPageIntoTree(node.children, page, target)
+      const children = childrenForNode(node)
+      if (!children.length) return node
+      const nextChildren = insertPageIntoTree(children, page, target)
       if (!nextChildren) return node
       matched = true
-      return { ...node, children: nextChildren }
+      return { ...node, children: nextChildren } as Node
     })
     return matched ? nextNodes : null
   }
@@ -3379,11 +3421,12 @@ function insertPageIntoTree(nodes: Node[], page: PageNode, target: Exclude<DropT
 
   let matched = false
   const nextNodes = nodes.map((node) => {
-    if (node.type !== 'category') return node
-    const nextChildren = insertPageIntoTree(node.children, page, target)
+    const children = childrenForNode(node)
+    if (!children.length) return node
+    const nextChildren = insertPageIntoTree(children, page, target)
     if (!nextChildren) return node
     matched = true
-    return { ...node, children: nextChildren }
+    return { ...node, children: nextChildren } as Node
   })
   return matched ? nextNodes : null
 }
@@ -3392,17 +3435,22 @@ function insertCategoryIntoTree(nodes: Node[], category: CategoryNode, parentId?
   if (!parentId) return [...nodes, category]
   let matched = false
   const nextNodes = nodes.map((node) => {
-    if (node.type !== 'category') return node
     if (node.id === parentId) {
       matched = true
-      return { ...node, children: [...node.children, category] }
+      return { ...node, children: [...childrenForNode(node), category] } as Node
     }
-    const nextChildren = insertCategoryIntoTree(node.children, category, parentId)
+    const children = childrenForNode(node)
+    if (!children.length) return node
+    const nextChildren = insertCategoryIntoTree(children, category, parentId)
     if (!nextChildren) return node
     matched = true
-    return { ...node, children: nextChildren }
+    return { ...node, children: nextChildren } as Node
   })
   return matched ? nextNodes : null
+}
+
+function childrenForNode(node: Node): Node[] {
+  return node.type === 'category' ? node.children : node.children || []
 }
 
 function pageDropTargetFromPointer(event: React.DragEvent<HTMLElement>, id: string): Exclude<DropTarget, null> {

@@ -80,12 +80,13 @@ export async function getPage(id: string): Promise<{ page: NavigationPage; markd
 
 export async function createPage(input: { title: string; slug?: string; categoryId?: string; status?: PageStatus; body?: string; authors?: string; icon?: CmsIcon | null }): Promise<NavigationPage> {
   const nodes = await loadNavigation()
-  const parent = input.categoryId ? findCategory(nodes, input.categoryId) : null
-  if (input.categoryId && !parent) throw new Error('Category not found.')
-  const siblings = parent ? parent.children : nodes
+  const target = input.categoryId ? childContainerFor(nodes, input.categoryId) : { children: nodes, slugs: [] }
+  if (input.categoryId && !target) throw new Error('Parent page or group not found.')
+  if (!target) throw new Error('Parent page or group not found.')
+  const siblings = target.children
   const used = new Set(siblings.map((node) => node.slug))
   const slug = collisionSafeSlug(input.slug || input.title, used)
-  const parentSlugs = input.categoryId ? categorySlugs(nodes, input.categoryId) : []
+  const parentSlugs = target.slugs
   const relativePath = `${[...parentSlugs, `${slug}.md`].join('/')}`
   const page: NavigationPage = {
     id: nodeId('page', [...parentSlugs, slug]),
@@ -96,6 +97,7 @@ export async function createPage(input: { title: string; slug?: string; category
     url: `/${relativePath}`,
     status: input.status || 'draft',
     icon: normalizeCmsIcon(input.icon),
+    children: [],
   }
   siblings.push(page)
   await writeMarkdown(relativePath, withAuthors(frontmatterFor(page), input.authors), input.body || `# ${input.title}\n`)
@@ -129,7 +131,7 @@ export async function deletePage(id: string): Promise<void> {
   const nodes = await loadNavigation()
   const page = removeNode(nodes, id)
   if (!page || page.type !== 'page') throw new Error('Page not found.')
-  await deletePageFiles(page)
+  await Promise.all(pagesInNode(page).map(deletePageFiles))
   await saveNavigation(nodes)
 }
 
@@ -162,11 +164,12 @@ export async function movePage(id: string, input: { categoryId?: string; beforeI
 
 export async function createCategory(input: { title: string; slug?: string; parentId?: string; icon?: CmsIcon | null }): Promise<NavigationCategory> {
   const nodes = await loadNavigation()
-  const parent = input.parentId ? findCategory(nodes, input.parentId) : null
-  if (input.parentId && !parent) throw new Error('Parent category not found.')
-  const siblings = parent ? parent.children : nodes
+  const target = input.parentId ? childContainerFor(nodes, input.parentId) : { children: nodes, slugs: [] }
+  if (input.parentId && !target) throw new Error('Parent page or group not found.')
+  if (!target) throw new Error('Parent page or group not found.')
+  const siblings = target.children
   const slug = collisionSafeSlug(input.slug || input.title, new Set(siblings.map((node) => node.slug)))
-  const parentSlugs = input.parentId ? categorySlugs(nodes, input.parentId) : []
+  const parentSlugs = target.slugs
   const category: NavigationCategory = {
     id: nodeId('category', [...parentSlugs, slug]),
     type: 'category',
@@ -203,7 +206,7 @@ export async function deleteCategory(id: string): Promise<void> {
   const nodes = await loadNavigation()
   const category = findCategory(nodes, id)
   if (!category) throw new Error('Category not found.')
-  const hasActive = category.children.some((node) => node.type === 'category' || node.status !== 'archived')
+  const hasActive = category.children.some(hasActiveNode)
   if (hasActive) throw new Error('Category must be empty or contain only archived pages.')
   removeNode(nodes, id)
   await saveNavigation(nodes)
@@ -622,10 +625,15 @@ function withAuthors(data: Record<string, unknown>, authors?: string): Record<st
 
 function categorySlugs(nodes: NavigationNode[], id: string, parents: string[] = []): string[] {
   for (const node of nodes) {
-    if (node.type !== 'category') continue
-    const current = [...parents, node.slug]
-    if (node.id === id) return current
-    const found = categorySlugs(node.children, id, current)
+    if (node.type === 'category') {
+      const current = [...parents, node.slug]
+      if (node.id === id) return current
+      const found = categorySlugs(node.children, id, current)
+      if (found.length) return found
+      continue
+    }
+    const pageChildren = node.children || []
+    const found = categorySlugs(pageChildren, id, [...parents, node.slug])
     if (found.length) return found
   }
   return []
@@ -646,16 +654,17 @@ function moveTarget(nodes: NavigationNode[], input: { categoryId?: string; befor
   }
 
   if (!input.categoryId) return { children: nodes, parentSlugs: [], index: nodes.length }
-  const category = findCategory(nodes, input.categoryId)
-  if (!category) throw new Error('Category not found.')
-  return { children: category.children, parentSlugs: categorySlugs(nodes, input.categoryId), index: category.children.length }
+  const target = childContainerFor(nodes, input.categoryId)
+  if (!target) throw new Error('Parent page or group not found.')
+  return { children: target.children, parentSlugs: target.slugs, index: target.children.length }
 }
 
 function findNodeContainer(nodes: NavigationNode[], id: string, parentSlugs: string[] = []): { children: NavigationNode[]; parentSlugs: string[] } | null {
   if (nodes.some((node) => node.id === id)) return { children: nodes, parentSlugs }
   for (const node of nodes) {
-    if (node.type !== 'category') continue
-    const found = findNodeContainer(node.children, id, [...parentSlugs, node.slug])
+    const children = node.type === 'category' ? node.children : node.children || []
+    if (!children.length) continue
+    const found = findNodeContainer(children, id, [...parentSlugs, node.slug])
     if (found) return found
   }
   return null
@@ -684,7 +693,32 @@ function removeCategoryAndLiftChildren(nodes: NavigationNode[], id: string): Nav
 }
 
 function pagesInCategory(category: NavigationCategory): NavigationPage[] {
-  return category.children.flatMap((node) => node.type === 'page' ? [node] : pagesInCategory(node))
+  return category.children.flatMap(pagesInNode)
+}
+
+function pagesInNode(node: NavigationNode): NavigationPage[] {
+  if (node.type === 'category') return pagesInCategory(node)
+  return [node, ...(node.children || []).flatMap(pagesInNode)]
+}
+
+function hasActiveNode(node: NavigationNode): boolean {
+  if (node.type === 'category') return node.children.some(hasActiveNode)
+  return node.status !== 'archived' || (node.children || []).some(hasActiveNode)
+}
+
+function childContainerFor(nodes: NavigationNode[], id: string, parents: string[] = []): { children: NavigationNode[]; slugs: string[] } | null {
+  for (const node of nodes) {
+    const current = [...parents, node.slug]
+    if (node.id === id) {
+      if (node.type === 'category') return { children: node.children, slugs: current }
+      node.children ||= []
+      return { children: node.children, slugs: current }
+    }
+    const children = node.type === 'category' ? node.children : node.children || []
+    const found = childContainerFor(children, id, current)
+    if (found) return found
+  }
+  return null
 }
 
 async function deletePageFiles(page: NavigationPage): Promise<void> {
@@ -732,6 +766,7 @@ async function rewriteCategoryDescendants(nodes: NavigationNode[], parents: stri
         await moveDirectoryIfExists(oldMediaPath, newMediaPath)
       }
       await updateMovedMarkdown(node)
+      if (node.children?.length) await rewriteCategoryDescendants(node.children, [...parents, node.slug])
     }
   }
 }
