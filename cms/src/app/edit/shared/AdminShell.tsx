@@ -116,7 +116,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const activePageId = selectedId || pages[0]?.id || ''
   const siteName = siteSettings.title.trim() || 'Documentation'
   const siteInitials = useMemo(() => initialsForTitle(siteName), [siteName])
-  const isCreatingPage = mode === 'new-page' || (mode === 'pages' && !pages.length && !page)
+  const isCreatingPage = mode === 'new-page' || page?.id.startsWith('pending-page-') || (mode === 'pages' && !pages.length && !page)
   const queuedEditorPageId = page?.id.startsWith('pending-page-') ? page.id : ''
 
   currentPageRef.current = page
@@ -163,6 +163,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
 
   useEffect(() => {
     if (mode !== 'pages' && mode !== 'media') return
+    if (selectedIdRef.current.startsWith('pending-page-')) return
     const targetId = pageId || selectedIdRef.current || pages[0]?.id || ''
     if (!targetId) return
     if (currentPageRef.current?.id === targetId && selectedIdRef.current === targetId) return
@@ -488,10 +489,48 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
 
   function startTreePage(parentId?: string) {
     if (!requireEditMode()) return
-    pendingNewPageGroupRef.current = parentId || ''
-    setPageCategoryId(parentId || '')
+    let draftToPersist: PageDraft | null = null
+    saveCurrentPageDraft()
+    const previousPageId = currentPageRef.current?.id
+    draftToPersist = previousPageId ? pageDraftsRef.current.get(previousPageId) || null : null
+    const tempId = pendingNodeId('page')
+    const title = 'Untitled'
+    const newPage: PageNode = { id: tempId, type: 'page', title, slug: '', path: '', url: '', status: 'draft' }
+    const initial = adapterInitialParagraphBlock()
+    setNavigation((current) => insertPageIntoTree(current, newPage, parentId ? { type: 'category', id: parentId } : { type: 'root' }) || current)
+    pageDraftsRef.current.set(tempId, {
+      page: newPage,
+      title,
+      authors: '',
+      status: 'draft',
+      icon: undefined,
+      blocks: cloneEditorBlocks([initial]),
+    })
     setTreeInsertMenuId('')
-    router.push('/edit/pages/new')
+    setTreeMenuId('')
+    setEditorView('editor')
+    setPage(newPage)
+    setSelectedId(tempId)
+    selectedIdRef.current = tempId
+    setTitle(title)
+    setAuthors('')
+    setStatus('draft')
+    setIcon(undefined)
+    setPageSlug('')
+    setPageCategoryId(parentId || '')
+    setBlocks([initial])
+    setEditorDocumentVersion((current) => current + 1)
+    setActiveBlockId(initial.id)
+    window.history.pushState(null, '', '/edit/pages/new')
+    showMessage('New page draft opened. Your previous page draft is preserved.')
+    if (!draftToPersist) return
+    void (async () => {
+      try {
+        await saveDraftToLocal(draftToPersist)
+      } catch (error) {
+        showMessage(error instanceof Error ? error.message : 'Previous page could not be saved locally.', 'error')
+      }
+    })()
   }
 
   async function uploadMedia(event: React.FormEvent<HTMLFormElement>) {
