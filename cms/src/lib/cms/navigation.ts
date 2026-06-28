@@ -4,24 +4,27 @@ const VALID_STATUSES = new Set<PageStatus>(['draft', 'published', 'archived'])
 
 export function assertNavigation(value: unknown): NavigationNode[] {
   if (!Array.isArray(value)) throw new Error('navigation.json must contain an array.')
-  value.forEach((node) => assertNode(node))
+  const seenIds = new Set<string>()
+  value.forEach((node) => assertNode(node, seenIds))
   return value as NavigationNode[]
 }
 
-function assertNode(value: unknown): void {
+function assertNode(value: unknown, seenIds: Set<string>): void {
   if (!value || typeof value !== 'object') throw new Error('Navigation node must be an object.')
   const node = value as Record<string, unknown>
   if (node.type === 'category') {
     requireString(node.id, 'category.id')
+    requireUniqueId(node.id, seenIds)
     requireString(node.title, 'category.title')
     requireString(node.slug, 'category.slug')
     if (node.icon !== undefined) requireIcon(node.icon, 'category.icon')
     if (!Array.isArray(node.children)) throw new Error(`Category ${node.id} children must be an array.`)
-    node.children.forEach((child) => assertNode(child))
+    node.children.forEach((child) => assertNode(child, seenIds))
     return
   }
   if (node.type === 'page') {
     requireString(node.id, 'page.id')
+    requireUniqueId(node.id, seenIds)
     requireString(node.title, 'page.title')
     requireString(node.slug, 'page.slug')
     requireString(node.path, 'page.path')
@@ -30,11 +33,17 @@ function assertNode(value: unknown): void {
     if (node.icon !== undefined) requireIcon(node.icon, 'page.icon')
     if (node.children !== undefined) {
       if (!Array.isArray(node.children)) throw new Error(`Page ${node.id} children must be an array.`)
-      node.children.forEach((child) => assertNode(child))
+      node.children.forEach((child) => assertNode(child, seenIds))
     }
     return
   }
   throw new Error('Navigation node type must be category or page.')
+}
+
+function requireUniqueId(value: unknown, seenIds: Set<string>): void {
+  if (typeof value !== 'string') return
+  if (seenIds.has(value)) throw new Error(`Duplicate navigation node id: ${value}`)
+  seenIds.add(value)
 }
 
 function requireString(value: unknown, field: string): void {
