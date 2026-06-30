@@ -73,6 +73,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   const [blockMenuId, setBlockMenuId] = useState('')
   const [treeMenuId, setTreeMenuId] = useState('')
   const [treeInsertMenuId, setTreeInsertMenuId] = useState('')
+  const [expandedTreeIds, setExpandedTreeIds] = useState<Set<string>>(() => new Set())
   const [pageSearch, setPageSearch] = useState('')
   const [draggingNodeId, setDraggingNodeId] = useState('')
   const [dropTarget, setDropTarget] = useState<DropTarget>(null)
@@ -194,6 +195,17 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
   useEffect(() => {
     selectedIdRef.current = selectedId
   }, [selectedId])
+
+  useEffect(() => {
+    if (!activePageId || pageSearchActive) return
+    const ancestors = ancestorIdsForNode(navigation, activePageId)
+    if (!ancestors.length) return
+    setExpandedTreeIds((current) => {
+      const next = new Set(current)
+      ancestors.forEach((id) => next.add(id))
+      return next.size === current.size ? current : next
+    })
+  }, [activePageId, navigation, pageSearchActive])
 
   useEffect(() => {
     if (!isEditMode || !page) return
@@ -506,6 +518,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
       const tempId = pendingNodeId('category')
       const newCategory: CategoryNode = { id: tempId, type: 'category', title, slug: slug || slugifyTitle(title), children: [] }
       setNavigation((current) => insertCategoryIntoTree(current, newCategory, parentId) || current)
+      if (parentId) setExpandedTreeIds((current) => new Set(current).add(parentId))
       setPendingTreeOperations((current) => [...current, { id: pendingOperationId(), type: 'createCategory', tempId, title, slug, parentId }])
       setTreeMenuId(tempId)
       setTreeInsertMenuId('')
@@ -526,6 +539,7 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
     const newPage: PageNode = { id: tempId, type: 'page', title, slug: '', path: '', url: '', status: 'draft', children: [] }
     const initial = adapterInitialParagraphBlock()
     setNavigation((current) => insertNodeIntoTree(current, newPage, parentId ? { type: 'category', id: parentId } : { type: 'root' }) || current)
+    if (parentId) setExpandedTreeIds((current) => new Set(current).add(parentId))
     pageDraftsRef.current.set(tempId, {
       page: newPage,
       title,
@@ -1306,6 +1320,14 @@ export default function AdminShell({ mode, pageId }: { mode: Mode; pageId?: stri
           editable={isEditMode && !pageSearchActive}
           pendingDeletedPageIds={pendingDeletedPageIds}
           pendingDeletedCategoryIds={pendingDeletedCategoryIds}
+          expandedIds={expandedTreeIds}
+          forceExpanded={pageSearchActive}
+          onToggleExpanded={(id) => setExpandedTreeIds((current) => {
+            const next = new Set(current)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+          })}
           onSelect={selectTreePage}
           onMenuToggle={(id) => setTreeMenuId((current) => current === id ? '' : id)}
           onDeletePage={deleteTreePage}
@@ -2486,6 +2508,9 @@ function Tree({
   editable,
   pendingDeletedPageIds,
   pendingDeletedCategoryIds,
+  expandedIds,
+  forceExpanded,
+  onToggleExpanded,
   onSelect,
   onMenuToggle,
   onDeletePage,
@@ -2509,6 +2534,9 @@ function Tree({
   editable: boolean
   pendingDeletedPageIds: Set<string>
   pendingDeletedCategoryIds: Set<string>
+  expandedIds: Set<string>
+  forceExpanded: boolean
+  onToggleExpanded: (id: string) => void
   onSelect: (id: string) => void
   onMenuToggle: (id: string) => void
   onDeletePage: (item: PageNode) => void
@@ -2526,7 +2554,11 @@ function Tree({
 }) {
   return (
     <ul className="tree">
-      {nodes.map((node) => (
+      {nodes.map((node) => {
+        const childNodes = node.type === 'category' ? node.children : node.children || []
+        const hasChildren = childNodes.length > 0
+        const isExpanded = forceExpanded || expandedIds.has(node.id)
+        return (
         <li key={node.id}>
           {node.type === 'page' ? (
             <div className="category-drop-wrap">
@@ -2561,6 +2593,15 @@ function Tree({
                 onDragEnd={onDragNodeEnd}
               >
                 <button
+                  type="button"
+                  className="tree-expand-button"
+                  disabled={!hasChildren}
+                  aria-label={isExpanded ? 'Collapse item' : 'Expand item'}
+                  onClick={(event) => { event.stopPropagation(); if (hasChildren) onToggleExpanded(node.id) }}
+                >
+                  {hasChildren ? (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : null}
+                </button>
+                <button
                   className={node.id === selectedId ? 'selected' : ''}
                   draggable={editable && !pendingDeletedPageIds.has(node.id)}
                   onClick={() => onSelect(node.id)}
@@ -2588,8 +2629,8 @@ function Tree({
                   </div>
                 ) : <div />}
               </div>
-              <Tree
-                nodes={node.children || []}
+              {hasChildren && isExpanded ? <Tree
+                nodes={childNodes}
                 selectedId={selectedId}
                 menuId={menuId}
                 draggingNodeId={draggingNodeId}
@@ -2597,6 +2638,9 @@ function Tree({
                 editable={editable}
                 pendingDeletedPageIds={pendingDeletedPageIds}
                 pendingDeletedCategoryIds={pendingDeletedCategoryIds}
+                expandedIds={expandedIds}
+                forceExpanded={forceExpanded}
+                onToggleExpanded={onToggleExpanded}
                 onSelect={onSelect}
                 onMenuToggle={onMenuToggle}
                 onDeletePage={onDeletePage}
@@ -2611,7 +2655,7 @@ function Tree({
                 onDropTargetChange={onDropTargetChange}
                 onDrop={onDrop}
                 rootInsert={false}
-              />
+              /> : null}
               {editable ? (
                 <TreeInsertControl
                   open={insertMenuId === `insert-${node.id}`}
@@ -2653,7 +2697,18 @@ function Tree({
                 }}
                 onDragEnd={onDragNodeEnd}
               >
-                <span className="category-label"><CmsIconView icon={node.icon} fallback={false} /><span>{node.title}</span>{pendingDeletedCategoryIds.has(node.id) ? <small className="tree-pending-label">Delete queued</small> : null}</span>
+                <button
+                  type="button"
+                  className="tree-expand-button"
+                  disabled={!hasChildren}
+                  aria-label={isExpanded ? 'Collapse group' : 'Expand group'}
+                  onClick={(event) => { event.stopPropagation(); if (hasChildren) onToggleExpanded(node.id) }}
+                >
+                  {hasChildren ? (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : null}
+                </button>
+                <button type="button" className="category-label" onClick={() => hasChildren && onToggleExpanded(node.id)}>
+                  <CmsIconView icon={node.icon} fallback={false} /><span>{node.title}</span>{pendingDeletedCategoryIds.has(node.id) ? <small className="tree-pending-label">Delete queued</small> : null}
+                </button>
                 {editable ? (
                   <div className="tree-actions">
                     <button type="button" className="tree-action-button" onClick={(event) => { event.stopPropagation(); onMenuToggle(node.id) }} title="Group options"><MoreHorizontal size={14} /></button>
@@ -2667,8 +2722,8 @@ function Tree({
                   </div>
                 ) : <div />}
               </div>
-              <Tree
-                nodes={node.children}
+              {hasChildren && isExpanded ? <Tree
+                nodes={childNodes}
                 selectedId={selectedId}
                 menuId={menuId}
                 draggingNodeId={draggingNodeId}
@@ -2676,6 +2731,9 @@ function Tree({
                 editable={editable}
                 pendingDeletedPageIds={pendingDeletedPageIds}
                 pendingDeletedCategoryIds={pendingDeletedCategoryIds}
+                expandedIds={expandedIds}
+                forceExpanded={forceExpanded}
+                onToggleExpanded={onToggleExpanded}
                 onSelect={onSelect}
                 onMenuToggle={onMenuToggle}
                 onDeletePage={onDeletePage}
@@ -2690,7 +2748,7 @@ function Tree({
                 onDropTargetChange={onDropTargetChange}
                 onDrop={onDrop}
                 rootInsert={false}
-              />
+              /> : null}
               {editable ? (
                 <TreeInsertControl
                   open={insertMenuId === `insert-${node.id}`}
@@ -2702,7 +2760,7 @@ function Tree({
             </div>
           )}
         </li>
-      ))}
+      )})}
       {editable && rootInsert ? (
         <li>
           <TreeInsertControl
@@ -3459,6 +3517,17 @@ function flattenCategories(nodes: Node[], prefix = ''): Array<{ id: string; labe
     if (node.type === 'page') return flattenCategories(node.children || [], label)
     return [{ id: node.id, label }, ...flattenCategories(node.children, label)]
   })
+}
+
+function ancestorIdsForNode(nodes: Node[], targetId: string, parents: string[] = []): string[] {
+  for (const node of nodes) {
+    if (node.id === targetId) return parents
+    const children = node.type === 'category' ? node.children : node.children || []
+    if (!children.length) continue
+    const found = ancestorIdsForNode(children, targetId, [...parents, node.id])
+    if (found.length || children.some((child) => child.id === targetId)) return found
+  }
+  return []
 }
 
 function filterNavigation(nodes: Node[], query: string, parents: string[] = []): Node[] {
